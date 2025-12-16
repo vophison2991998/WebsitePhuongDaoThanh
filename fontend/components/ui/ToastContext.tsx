@@ -1,74 +1,78 @@
-"use client";
+// frontend/components/ui/ToastContext.tsx
+'use client'; 
 
-import {
-  createContext,
-  useContext,
-  useState,
-  ReactNode,
-  useCallback,
-  useRef,
-} from "react";
-import ToastContainer, { ToastItem } from "./ToastContainer";
-import { ToastType } from "./Toast";
+import React, { useState, useCallback, createContext, useContext } from 'react';
+import { usePathname } from 'next/navigation';
+import Toast from './Toast'; // Import component hiển thị
 
-interface ToastContextType {
-  success: (msg: string) => void;
-  error: (msg: string) => void;
-  info: (msg: string) => void;
-  warning: (msg: string) => void;
+// --- Định nghĩa Kiểu dữ liệu ---
+export type ToastType = "success" | "error" | "info" | "warning" | "delete";
+
+export interface ToastMessage {
+    id: number;
+    message: string;
+    type: ToastType;
 }
 
-const ToastContext = createContext<ToastContextType | null>(null);
+export interface ToastContextType {
+    showToast: (message: string, type?: ToastType) => void;
+}
 
-export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const timeoutMap = useRef<Map<number, NodeJS.Timeout>>(new Map());
-  const idRef = useRef(0);
+// --- Khởi tạo Context ---
+export const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
-  const removeToast = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-
-    const timeout = timeoutMap.current.get(id);
-    if (timeout) {
-      clearTimeout(timeout);
-      timeoutMap.current.delete(id);
+// --- 1. HOOK useToast ---
+export const useToast = (): ToastContextType => {
+    const context = useContext(ToastContext);
+    if (!context) {
+        throw new Error('useToast must be used within a ToastProvider.');
     }
-  }, []);
+    return context;
+};
 
-  const showToast = useCallback(
-    (message: string, type: ToastType) => {
-      const id = ++idRef.current;
+// --- 2. COMPONENT PROVIDER ---
+export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const pathname = usePathname(); // Dùng để kiểm tra đường dẫn
 
-      setToasts((prev) => [...prev, { id, message, type }]);
+    // Hàm đóng Toast
+    const dismissToast = useCallback((id: number) => {
+        setTimeout(() => {
+            setToasts(prev => prev.filter(toast => toast.id !== id));
+        }, 150); 
+    }, []);
 
-      const timeout = setTimeout(() => {
-        removeToast(id);
-      }, 3500);
+    // Hàm hiển thị Toast (API chính)
+    const showToast = useCallback((message: string, type: ToastType = 'info') => {
+        
+        // LOGIC TẮT TOAST TRÊN TRANG GỐC (/)
+        if (pathname === '/') {
+            // Toast bị vô hiệu hóa khi ở trang http://localhost:3000/
+            return; 
+        }
 
-      timeoutMap.current.set(id, timeout);
-    },
-    [removeToast]
-  );
+        const id = Date.now();
+        const newToast = { id, message, type };
+        setToasts(prev => [newToast, ...prev]); 
+    }, [pathname]);
 
-  const value: ToastContextType = {
-    success: (msg) => showToast(msg, "success"),
-    error: (msg) => showToast(msg, "error"),
-    info: (msg) => showToast(msg, "info"),
-    warning: (msg) => showToast(msg, "warning"),
-  };
 
-  return (
-    <ToastContext.Provider value={value}>
-      {children}
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
-    </ToastContext.Provider>
-  );
-}
-
-export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error("useToast must be used inside ToastProvider");
-  }
-  return ctx;
-}
+    return (
+        <ToastContext.Provider value={{ showToast }}>
+            {children}
+            
+            {/* CONTAINER HIỂN THỊ CÁC TOAST */}
+            <div className="fixed top-5 right-5 z-[1000] space-y-3 pointer-events-none">
+                {toasts.map(toast => (
+                    <div key={toast.id} className="pointer-events-auto">
+                        <Toast 
+                            message={toast.message} 
+                            type={toast.type} 
+                            onClose={() => dismissToast(toast.id)} 
+                        />
+                    </div>
+                ))}
+            </div>
+        </ToastContext.Provider>
+    );
+};

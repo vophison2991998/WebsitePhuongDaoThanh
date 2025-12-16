@@ -8,7 +8,7 @@ import Cookies from "js-cookie";
 import { decryptData } from "@/lib/encryption";
 import { 
   FaHome, FaTasks, FaClipboardList, FaUserAlt, 
-  FaUsersCog, FaChartBar, FaUserShield ,FaBuilding ,FaLaptopHouse , FaTint
+  FaUsersCog, FaChartBar, FaUserShield ,FaBuilding ,FaLaptopHouse , FaTint , FaFileUpload
 } from "react-icons/fa";
 
 export default function Sidebar() {
@@ -27,23 +27,31 @@ export default function Sidebar() {
   const menuConfig = {
 ADMIN: [
       { name: "Tổng quan hệ thống", path: "/portal/a9f3x", icon: <FaUserShield /> },
-      
-      { 
-        name: "Quản lý Thiết bị", 
-        path: "/portal/a9f3x/devices", 
+
+      {
+        name: "Quản lý Thiết bị",
+        path: "/portal/a9f3x/devices",
         icon: <FaLaptopHouse />
       },
-      
-      // >>> THÊM MỤC QUẢN LÝ NƯỚC UỐNG <<<
-      { 
-        name: "Quản lý Nước Uống", 
-        path: "/portal/a9f3x/water", 
-        icon: <FaTint /> 
+
+      {
+        name: "Quản lý Nước Uống",
+        path: "/portal/a9f3x/water",
+        icon: <FaTint />
       },
-      
+
       { name: "Quản lý nhân sự", path: "/portal/a9f3x/users", icon: <FaUsersCog /> },
       { name: "Quản lý phòng ban", path: "/portal/a9f3x/departments", icon: <FaBuilding /> },
+
       { name: "Phân công công việc", path: "/portal/a9f3x/tasks", icon: <FaTasks /> },
+
+      // >>> MỤC MỚI ĐƯỢC THÊM <<<
+      {
+        name: "Tài liệu Công việc", // Trang upload file PDF và Hình ảnh
+        path: "/portal/a9f3x/task-files", // Đường dẫn mới
+        icon: <FaFileUpload /> // Icon upload file
+      },
+
       { name: "Báo cáo thống kê", path: "/portal/a9f3x/reports", icon: <FaChartBar /> },
 ],
     MANAGER: [
