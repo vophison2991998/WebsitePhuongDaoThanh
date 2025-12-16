@@ -8,7 +8,7 @@ import Cookies from "js-cookie";
 import { decryptData } from "@/lib/encryption";
 import { 
   FaHome, FaTasks, FaClipboardList, FaUserAlt, 
-  FaUsersCog, FaChartBar, FaUserShield ,FaBuilding
+  FaUsersCog, FaChartBar, FaUserShield ,FaBuilding ,FaLaptopHouse , FaTint
 } from "react-icons/fa";
 
 export default function Sidebar() {
@@ -25,13 +25,27 @@ export default function Sidebar() {
 
   // Cấu hình menu cho từng loại tài khoản
   const menuConfig = {
-    ADMIN: [
+ADMIN: [
       { name: "Tổng quan hệ thống", path: "/portal/a9f3x", icon: <FaUserShield /> },
+      
+      { 
+        name: "Quản lý Thiết bị", 
+        path: "/portal/a9f3x/devices", 
+        icon: <FaLaptopHouse />
+      },
+      
+      // >>> THÊM MỤC QUẢN LÝ NƯỚC UỐNG <<<
+      { 
+        name: "Quản lý Nước Uống", 
+        path: "/portal/a9f3x/water", 
+        icon: <FaTint /> 
+      },
+      
       { name: "Quản lý nhân sự", path: "/portal/a9f3x/users", icon: <FaUsersCog /> },
       { name: "Quản lý phòng ban", path: "/portal/a9f3x/departments", icon: <FaBuilding /> },
       { name: "Phân công công việc", path: "/portal/a9f3x/tasks", icon: <FaTasks /> },
       { name: "Báo cáo thống kê", path: "/portal/a9f3x/reports", icon: <FaChartBar /> },
-    ],
+],
     MANAGER: [
       { name: "Bảng điều khiển", path: "/portal/m2k8q", icon: <FaChartBar /> },
       { name: "Quản lý nhóm", path: "/portal/m2k8q/team", icon: <FaUsersCog /> },
