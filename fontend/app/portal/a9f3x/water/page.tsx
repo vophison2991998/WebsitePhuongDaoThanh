@@ -1,178 +1,168 @@
-// app/portal/a9f3x/water/page.tsx
+"use client";
 
-'use client';
+import React from 'react';
+import Link from 'next/link';
+// Import icons
+import { 
+    FaTruckLoading,  // Nhận Hàng (Receipt)
+    FaSignOutAlt,    // Trả Nước (Issue/Dispense)
+    FaBoxes,         // Tồn kho
+    FaChartPie,      // Tổng quan
+    FaCalendarCheck, // Lịch sử
+    FaClipboardList, // KPI: Tổng giao dịch
+    FaDollarSign     // KPI: Giá trị (giả định)
+} from 'react-icons/fa';
 
-import React, { useState, useMemo } from 'react';
-import { FaTint, FaDownload, FaUpload, FaFilter, FaEdit, FaTrashAlt } from 'react-icons/fa';
-// Import TransactionModal (đã thiết kế code mẫu ở phản hồi trước)
+// Định nghĩa URL cho các trang con (Dựa trên thiết kế trước)
+const RECEIPT_PAGE_URL = '/portal/a9f3x/water/receipt'; 
+const ISSUE_PAGE_URL = '/portal/a9f3x/water/issue';     
+const DASHBOARD_URL = '/portal/a9f3x/water/dashboard';  
+const HISTORY_URL = '/portal/a9f3x/water/history';      // Lịch sử Giao dịch
 
-// Dữ liệu và kiểu mẫu
-type WaterType = 'Binh_20L' | 'Thung_5L' | 'Chai_1L';
-type TransactionType = 'IN' | 'OUT';
-
-interface WaterTransaction {
-    id: string; type: TransactionType; transactionDate: string;
-    waterType: WaterType; quantity: number; actorName: string;
-    relatedEntity: string; notes: string;
+// --- Component 1: Card Thống kê Nhanh (KPI Summary) ---
+interface KpiCardProps {
+    title: string;
+    value: number | string;
+    unit: string;
+    icon: React.ReactNode;
+    color: string;
 }
 
-const DUMMY_TRANSACTIONS: WaterTransaction[] = [
-    { id: 'W001', type: 'IN', transactionDate: '2025-12-15T09:00:00', waterType: 'Binh_20L', quantity: 50, actorName: 'Lê Văn B', relatedEntity: 'Công ty Lavie', notes: 'Nhập hàng định kỳ tháng 12' },
-    { id: 'W002', type: 'OUT', transactionDate: '2025-12-15T10:30:00', waterType: 'Binh_20L', quantity: 5, actorName: 'Nguyễn Thị D', relatedEntity: 'Phòng Kế toán', notes: 'Phân phát cho tầng 3' },
-    { id: 'W003', type: 'OUT', transactionDate: '2025-12-14T15:00:00', waterType: 'Thung_5L', quantity: 20, actorName: 'Trần Văn E', relatedEntity: 'Phòng IT', notes: 'Dự trữ cho khu vực máy chủ' },
-    { id: 'W004', type: 'OUT', transactionDate: '2025-12-14T15:00:00', waterType: 'Binh_20L', quantity: 1, actorName: 'Trần Văn E', relatedEntity: 'Phòng IT', notes: 'Gấp' },
-];
+const KpiCard: React.FC<KpiCardProps> = ({ title, value, unit, icon, color }) => (
+    <div className="bg-white p-5 rounded-xl shadow-md border-b-4" style={{ borderColor: color }}>
+        <div className="flex items-center justify-between">
+            <div className={`p-3 rounded-full text-white`} style={{ backgroundColor: color }}>
+                {icon}
+            </div>
+            <div className="text-right">
+                <p className="text-sm font-medium text-gray-500">{title}</p>
+                <p className="text-3xl font-extrabold text-gray-900">
+                    {value} 
+                    <span className="text-lg font-semibold text-gray-600 ml-1">{unit}</span>
+                </p>
+            </div>
+        </div>
+    </div>
+);
 
-const WaterTransactionPage: React.FC = () => {
-    const [transactions, setTransactions] = useState(DUMMY_TRANSACTIONS);
-    const [filterType, setFilterType] = useState<TransactionType | 'ALL'>('ALL');
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingTransaction, setEditingTransaction] = useState<WaterTransaction | null>(null);
+// --- Component 2: Card Chức năng Chính (Feature Card) ---
+interface FeatureCardProps {
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    href: string;
+    bgColor: string; // Sử dụng mã màu Tailwind
+}
 
-    // Tính toán Tồn Kho (Logic StockCards)
-    const currentStock = useMemo(() => {
-        const stock: Record<WaterType, number> = { 'Binh_20L': 0, 'Thung_5L': 0, 'Chai_1L': 0 };
-        transactions.forEach(t => {
-            if (t.type === 'IN') {
-                stock[t.waterType] += t.quantity;
-            } else if (t.type === 'OUT') {
-                stock[t.waterType] -= t.quantity;
-            }
-        });
-        return stock;
-    }, [transactions]);
+const FeatureCard: React.FC<FeatureCardProps> = ({ title, description, icon, href, bgColor }) => {
+    // Lấy màu tương ứng cho hiệu ứng hover và nút
+    const hoverColor = bgColor.replace('600', '700'); 
+    const ringColor = bgColor.replace('600', '500').replace('bg-', 'focus:ring-');
 
-    const filteredTransactions = useMemo(() => {
-        if (filterType === 'ALL') return transactions;
-        return transactions.filter(t => t.type === filterType);
-    }, [transactions, filterType]);
+    return (
+        <Link href={href} passHref>
+            <div className={`p-6 rounded-xl shadow-lg transform transition-all duration-300 hover:scale-[1.02] cursor-pointer border border-gray-100 bg-white hover:shadow-xl`}>
+                <div className={`flex items-center justify-center w-14 h-14 rounded-full mb-4 text-white ${bgColor}`}>
+                    {icon}
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">{title}</h3>
+                <p className="text-gray-600 mb-4 text-sm">{description}</p>
+                <button 
+                    className={`w-full py-2 px-4 text-sm font-medium rounded-lg text-white ${bgColor} transition-colors hover:${hoverColor} focus:outline-none ${ringColor} focus:ring-2 focus:ring-offset-2`}
+                >
+                    Truy cập ngay
+                </button>
+            </div>
+        </Link>
+    );
+};
 
-    // Xử lý tạo mới và sửa giao dịch
-    const handleOpenModal = (type: TransactionType | null = null, transaction: WaterTransaction | null = null) => {
-        if (transaction) {
-            setEditingTransaction(transaction);
-        } else {
-            setEditingTransaction(type ? { ...DUMMY_TRANSACTIONS[0], type, id: '' } : null); // Dùng type để mặc định
-        }
-        setIsModalOpen(true);
-    };
-
-    // Hàm giả định lưu giao dịch (Tạo/Sửa)
-    const handleSaveTransaction = (data: Omit<WaterTransaction, 'id'>) => {
-        // Logic save/update ở đây
-        setIsModalOpen(false);
-    };
-
-    const getTransactionTypeLabel = (type: TransactionType) => type === 'IN' ? 'Nhận (Nhập Kho)' : 'Trả (Phân Phát)';
-    const getTransactionTypeColor = (type: TransactionType) => type === 'IN' ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100';
+// --- Trang Chính ---
+const WaterLandingPage: React.FC = () => {
+    
+    // Dữ liệu giả định cho KPI
+    const summaryKpis = [
+        { title: "Tồn Kho Hiện Tại", value: 12500, unit: "Bình", icon: <FaBoxes size={20} />, color: "#3b82f6" }, // Blue
+        { title: "Tổng Nhận (Tháng)", value: 3500, unit: "Bình", icon: <FaTruckLoading size={20} />, color: "#10b981" }, // Green
+        { title: "Tổng Xuất (Tháng)", value: 2100, unit: "Bình", icon: <FaSignOutAlt size={20} />, color: "#f59e0b" }, // Orange
+        { title: "Tổng GD (Tháng)", value: 56, unit: "Lần", icon: <FaClipboardList size={20} />, color: "#6366f1" }, // Indigo
+    ];
 
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
-            <h1 className="text-3xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                <FaTint /> Quản lý Giao dịch Nước Uống
-            </h1>
+            
+            {/* Header và Tiêu đề */}
+            <header className="mb-8 p-4 bg-white rounded-xl shadow-md">
+                <h1 className="text-4xl font-extrabold text-gray-900 flex items-center">
+                    <FaBoxes className="mr-3 text-indigo-600" />
+                    Quản Lý Kho Nước (WMS Portal)
+                </h1>
+                <p className="mt-2 text-lg text-gray-500">
+                    Trang tổng quan và điều hướng nhanh đến các chức năng chính.
+                </p>
+            </header>
 
-            {/* 1. THỐNG KÊ TỒN KHO (STOCK CARDS LOGIC) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                {Object.entries(currentStock).map(([key, value]) => (
-                    <StockCard key={key} waterType={key as WaterType} stock={value} />
+            {/* Khu vực 1: Thống kê Nhanh (KPI) */}
+            <h2 className="text-2xl font-semibold text-gray-800 mb-4">📊 Thống kê Hoạt động (Tháng này)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+                {summaryKpis.map((kpi, index) => (
+                    <KpiCard
+                        key={index}
+                        title={kpi.title}
+                        value={kpi.value.toLocaleString('vi-VN')}
+                        unit={kpi.unit}
+                        icon={kpi.icon}
+                        color={kpi.color}
+                    />
                 ))}
             </div>
 
-            {/* 2. THANH CÔNG CỤ VÀ BỘ LỌC */}
-            <div className="bg-white p-4 rounded-lg shadow-md mb-6 flex justify-between items-center">
+            {/* Khu vực 2: Điều hướng Chức năng */}
+            <h2 className="text-2xl font-semibold text-gray-800 mb-4 mt-6">🚀 Chức năng Chính</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 
-                {/* NÚT HÀNH ĐỘNG */}
-                <div className="flex gap-4">
-                    <button 
-                        onClick={() => handleOpenModal('IN')} 
-                        className="px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700 flex items-center gap-2"
-                    >
-                        <FaDownload /> Nhập Kho (Nhận)
-                    </button>
-                    <button 
-                        onClick={() => handleOpenModal('OUT')}
-                        className="px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-sm hover:bg-red-700 flex items-center gap-2"
-                    >
-                        <FaUpload /> Phân Phát (Trả)
-                    </button>
-                </div>
+                {/* 1. Nhận Nước (Nhập kho) */}
+                <FeatureCard
+                    title="Nhận Nước (Nhập Kho)"
+                    description="Ghi nhận số lượng bình nước mới nhận từ nhà cung cấp vào kho. Bắt đầu quy trình kiểm kê."
+                    icon={<FaTruckLoading size={24} />}
+                    href={RECEIPT_PAGE_URL}
+                    bgColor="bg-green-600"
+                />
 
-                {/* BỘ LỌC */}
-                <div className="flex gap-4 items-center">
-                    <span className="text-gray-600"><FaFilter className="inline mr-1" /> Lọc theo:</span>
-                    <select
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value as TransactionType | 'ALL')}
-                        className="p-2 border border-gray-300 rounded-md"
-                    >
-                        <option value="ALL">Tất cả Giao dịch</option>
-                        <option value="IN">Nhận (Nhập Kho)</option>
-                        <option value="OUT">Trả (Phân Phát)</option>
-                    </select>
-                </div>
-            </div>
+                {/* 2. Trả Nước (Xuất kho/Sử dụng) */}
+                <FeatureCard
+                    title="Trả Nước (Xuất Kho)"
+                    description="Quản lý việc xuất kho bình nước để giao cho khách hàng hoặc chuyển đến các bộ phận sử dụng."
+                    icon={<FaSignOutAlt size={24} />}
+                    href={ISSUE_PAGE_URL}
+                    bgColor="bg-blue-600"
+                />
 
-            {/* 3. BẢNG DANH SÁCH GIAO DỊCH */}
-            <div className="bg-white rounded-lg shadow-md overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mã GD</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại GD</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Thời gian</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại Nước</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Số lượng</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phòng ban/Nguồn</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Người lấy</th>
-                            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Thao tác</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredTransactions.map((t) => (
-                            <tr key={t.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{t.id}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getTransactionTypeColor(t.type)}`}>
-                                        {getTransactionTypeLabel(t.type)}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(t.transactionDate).toLocaleString('vi-VN')}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{t.waterType.replace('_', ' ')}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700">{t.quantity}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{t.relatedEntity}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{t.actorName}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                                    <button title="Sửa" onClick={() => handleOpenModal(t.type, t)} className="text-blue-600 hover:text-blue-900 mx-2"><FaEdit size={16} /></button>
-                                    <button title="Xóa" className="text-red-600 hover:text-red-900 mx-2"><FaTrashAlt size={16} /></button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                {/* 3. Tổng quan Tồn kho (Dashboard) */}
+                <FeatureCard
+                    title="Tổng Quan Tồn Kho"
+                    description="Xem báo cáo và biểu đồ chi tiết về số lượng tồn kho, tỷ lệ luân chuyển và xu hướng nhập/xuất."
+                    icon={<FaChartPie size={24} />}
+                    href={DASHBOARD_URL}
+                    bgColor="bg-indigo-600"
+                />
+
+                {/* 4. Lịch sử Giao dịch */}
+                <FeatureCard
+                    title="Lịch Sử Giao Dịch"
+                    description="Tìm kiếm, lọc và xem lại tất cả các giao dịch Nhận và Trả nước đã được ghi nhận trong hệ thống."
+                    icon={<FaCalendarCheck size={24} />}
+                    href={HISTORY_URL}
+                    bgColor="bg-yellow-600"
+                />
             </div>
             
-            {/* MODAL TẠO/SỬA GIAO DỊCH */}
-            {/* <TransactionModal 
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onSave={handleSaveTransaction}
-                initialData={editingTransaction}
-            /> */}
+            <footer className="mt-12 pt-4 border-t border-gray-200 text-center text-sm text-gray-500">
+                Hệ thống WMS | Powered by A9F3X
+            </footer>
         </div>
     );
 };
 
-// --- Sub-Component: StockCards.tsx (Tích hợp logic) ---
-const StockCard: React.FC<{ waterType: WaterType; stock: number }> = ({ waterType, stock }) => {
-    const isLow = stock < 10 && waterType !== 'Chai_1L'; // Giả định tồn kho thấp
-    return (
-        <div className={`p-5 rounded-lg shadow-md bg-white border-l-4 ${isLow ? 'border-red-500' : 'border-blue-500'}`}>
-            <p className="text-sm font-medium text-gray-500">Tồn kho {waterType.replace('_', ' ')}</p>
-            <h3 className="text-2xl font-bold text-gray-800 mt-1">{stock} đơn vị</h3>
-            {isLow && <p className="text-xs text-red-500 mt-1">Cần nhập thêm!</p>}
-        </div>
-    );
-};
-
-export default WaterTransactionPage;
+export default WaterLandingPage;

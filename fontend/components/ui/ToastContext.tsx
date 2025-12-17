@@ -14,8 +14,14 @@ export interface ToastMessage {
     type: ToastType;
 }
 
+// ✅ CẬP NHẬT: Định nghĩa đầy đủ các phương thức tắt
 export interface ToastContextType {
     showToast: (message: string, type?: ToastType) => void;
+    success: (message: string) => void;
+    error: (message: string) => void;
+    info: (message: string) => void;
+    warning: (message: string) => void; // Phương thức đã thêm
+    delete: (message: string) => void;
 }
 
 // --- Khởi tạo Context ---
@@ -33,7 +39,7 @@ export const useToast = (): ToastContextType => {
 // --- 2. COMPONENT PROVIDER ---
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
-    const pathname = usePathname(); // Dùng để kiểm tra đường dẫn
+    const pathname = usePathname(); 
 
     // Hàm đóng Toast
     const dismissToast = useCallback((id: number) => {
@@ -47,7 +53,6 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         
         // LOGIC TẮT TOAST TRÊN TRANG GỐC (/)
         if (pathname === '/') {
-            // Toast bị vô hiệu hóa khi ở trang http://localhost:3000/
             return; 
         }
 
@@ -56,9 +61,19 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setToasts(prev => [newToast, ...prev]); 
     }, [pathname]);
 
+    // ✅ CẬP NHẬT: Triển khai các phương thức tắt
+    const contextValue: ToastContextType = {
+        showToast,
+        success: (message: string) => showToast(message, 'success'),
+        error: (message: string) => showToast(message, 'error'),
+        info: (message: string) => showToast(message, 'info'),
+        warning: (message: string) => showToast(message, 'warning'),
+        delete: (message: string) => showToast(message, 'delete'),
+    };
 
     return (
-        <ToastContext.Provider value={{ showToast }}>
+        // ✅ CẬP NHẬT: Truyền object contextValue đã triển khai đầy đủ
+        <ToastContext.Provider value={contextValue}>
             {children}
             
             {/* CONTAINER HIỂN THỊ CÁC TOAST */}

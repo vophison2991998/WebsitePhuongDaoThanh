@@ -21,7 +21,7 @@ export default function LoginPage() {
     }, 1000);
 
     if (!shown.current) {
-      toast.info("Cổng thông tin xác thực quốc gia sẵn sàng");
+      toast.showToast("Cổng thông tin xác thực quốc gia sẵn sàng");
       shown.current = true;
     }
     return () => clearInterval(timer);
