@@ -3,16 +3,17 @@
 import pool from '../config/db.js'; 
 import QRCode from 'qrcode'; 
 
-// Hàm Helper: Tạo chuỗi dữ liệu JSON để mã hóa vào QR
-const generateQRCodeData = async (lotCode) => {
-    // Dữ liệu muốn mã QR lưu trữ
+/**
+ * Hàm Helper: Tạo chuỗi dữ liệu JSON để mã hóa vào QR
+ * @param {string} lotCode - Mã lô hàng
+ * @returns {string} Chuỗi JSON chứa dữ liệu QR
+ */
+const generateQRCodeData = (lotCode) => {
     const dataToEncode = JSON.stringify({
         type: 'RECEIPT_LOT',
         code: lotCode,
         timestamp: Date.now()
     });
-    
-    // Chúng ta lưu chuỗi JSON này vào CSDL. 
     return dataToEncode; 
 };
 
@@ -20,10 +21,9 @@ const generateQRCodeData = async (lotCode) => {
 export const ReceiptModel = {
     
     /**
-     * Tạo một lô hàng mới, bao gồm việc kiểm tra/tạo Supplier và Delivery Person, 
-     * và tạo QR Code data.
+     * Tạo một lô hàng nhận mới. (Ánh xạ tới receiptController.createReceipt)
      */
-    createReceiptLot: async (data, userId) => {
+    create: async (data, userId) => {
         const client = await pool.connect();
         try {
             await client.query('BEGIN'); // Bắt đầu Transaction
@@ -56,27 +56,26 @@ export const ReceiptModel = {
             }
             const deliveryPersonId = deliveryPersonResult.rows[0].id;
 
-            // 3. Lấy Water Type ID (Giả định 'Nước tinh khiết 20L' tồn tại)
+            // 3. Lấy Water Type ID (Dùng data.waterType và bảng water_product)
             const waterTypeResult = await client.query(
-                "SELECT id FROM inventory_water_types WHERE name = $1", 
-                ['Nước tinh khiết 20L'] 
+                "SELECT product_id AS id FROM water_product WHERE name = $1", 
+                [data.waterType]
             );
             
             if (waterTypeResult.rows.length === 0) {
-                // Nếu không tìm thấy loại nước, hủy transaction
-                throw new Error("Water type 'Nước tinh khiết 20L' not found. Please insert data into inventory_water_types.");
+                throw new Error(`Water type '${data.waterType}' not found. Please check Master Data.`);
             }
             const waterTypeId = waterTypeResult.rows[0].id;
 
             // 4. Tạo Mã Lô Hàng và QR Code Data
-            const lotCode = `LOT-${Date.now().toString().slice(-6)}`;
-            const qrCodeData = await generateQRCodeData(lotCode); 
+            const lotCode = `LOT-${Date.now().toString().slice(-6)}`; 
+            const qrCodeData = generateQRCodeData(lotCode); 
 
             // 5. Thêm Lô Hàng Nhận (app_receipt_lot)
             const receiptQuery = `
                 INSERT INTO app_receipt_lot (lot_code, supplier_id, delivery_person_id, water_type_id, quantity, receipt_date, status, received_by, qr_code_data) 
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                RETURNING *`;
+                RETURNING id, lot_code, quantity, receipt_date, status, water_type_id, supplier_id, delivery_person_id`; 
             
             const newLotResult = await client.query(receiptQuery, [
                 lotCode,
@@ -87,10 +86,11 @@ export const ReceiptModel = {
                 data.receiptDate,
                 'CHỜ XÁC NHẬN', 
                 userId,
-                qrCodeData // <<< LƯU DỮ LIỆU QR
+                qrCodeData 
             ]);
 
             await client.query('COMMIT'); // Commit Transaction
+            
             return newLotResult.rows[0];
 
         } catch (error) {
@@ -102,40 +102,31 @@ export const ReceiptModel = {
     },
     
     /**
-     * Cập nhật cột qr_code_data sau khi lô hàng đã được tạo.
-     * (Hữu ích khi tạo lại QR code data)
-     */
-    updateLotQrCodeData: async (lotId, qrCodeData) => {
-        const query = `
-            UPDATE app_receipt_lot
-            SET qr_code_data = $1
-            WHERE id = $2
-            RETURNING id, qr_code_data`;
-        const result = await pool.query(query, [qrCodeData, lotId]);
-        return result.rows[0];
-    },
-
-
-    /**
      * Lấy danh sách lô hàng theo từ khóa tìm kiếm.
      */
-    getReceiptLots: async (searchTerm = '') => {
+    find: async (searchTerm = '') => {
         let query = `
             SELECT 
-                rl.id, rl.lot_code, rl.quantity, TO_CHAR(rl.receipt_date, 'DD/MM/YYYY') AS receipt_date, rl.status, 
+                rl.id, 
+                rl.lot_code, 
+                rl.quantity, 
+                TO_CHAR(rl.receipt_date, 'DD/MM/YYYY') AS receipt_date, 
+                rl.status, 
                 rl.qr_code_data, 
                 s.name AS supplier,
-                dp.full_name AS delivery_person
+                dp.full_name AS delivery_person,
+                wp.name AS water_type 
             FROM app_receipt_lot rl
             JOIN app_supplier s ON rl.supplier_id = s.id
             JOIN app_delivery_person dp ON rl.delivery_person_id = dp.id
+            JOIN water_product wp ON rl.water_type_id = wp.product_id
             WHERE 1=1
         `;
         const params = [];
 
         if (searchTerm) {
             const searchPattern = `%${searchTerm.toLowerCase()}%`;
-            query += ` AND (LOWER(rl.lot_code) LIKE $1 OR LOWER(s.name) LIKE $1 OR LOWER(dp.full_name) LIKE $1)`;
+            query += ` AND (LOWER(rl.lot_code) LIKE $1 OR LOWER(s.name) LIKE $1 OR LOWER(dp.full_name) LIKE $1 OR LOWER(wp.name) LIKE $1)`;
             params.push(searchPattern);
         }
 
@@ -146,9 +137,27 @@ export const ReceiptModel = {
     },
     
     /**
+     * Lấy lô hàng theo ID.
+     */
+    findById: async (lotId) => {
+        const query = `
+            SELECT 
+                rl.*, 
+                wp.name AS water_type, 
+                s.name AS supplier
+            FROM app_receipt_lot rl
+            JOIN water_product wp ON rl.water_type_id = wp.product_id 
+            JOIN app_supplier s ON rl.supplier_id = s.id
+            WHERE rl.id = $1
+        `;
+        const result = await pool.query(query, [lotId]);
+        return result.rows[0];
+    },
+
+    /**
      * Cập nhật trạng thái của lô hàng.
      */
-    updateLotStatus: async (lotId, newStatus) => {
+    updateStatus: async (lotId, newStatus) => {
         const query = `
             UPDATE app_receipt_lot
             SET status = $1
@@ -157,25 +166,29 @@ export const ReceiptModel = {
         const result = await pool.query(query, [newStatus, lotId]);
         return result.rows[0];
     },
+
+    /**
+     * Cập nhật trường qr_code_data cho một lô hàng. (Đã thêm)
+     */
+    updateLotQrCodeData: async (lotId, qrCodeData) => {
+        const query = `
+            UPDATE app_receipt_lot
+            SET qr_code_data = $1
+            WHERE id = $2
+            RETURNING id, qr_code_data`;
+        const result = await pool.query(query, [qrCodeData, lotId]);
+        return result.rows[0];
+    },
     
     /**
      * Xóa vĩnh viễn lô hàng khỏi CSDL.
      */
-    deleteReceiptLot: async (lotId) => {
+    delete: async (lotId) => {
         const query = `
             DELETE FROM app_receipt_lot
             WHERE id = $1
             RETURNING *`;
         const result = await pool.query(query, [lotId]);
-        return result.rows[0];
+        return result.rows.length; 
     },
-
-    /**
-     * Lấy lô hàng theo ID (cần cho việc lấy QR Code data trong Controller)
-     */
-    getLotById: async (lotId) => {
-        const query = `SELECT * FROM app_receipt_lot WHERE id = $1`;
-        const result = await pool.query(query, [lotId]);
-        return result.rows[0];
-    }
 };

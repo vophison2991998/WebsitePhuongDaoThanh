@@ -4,13 +4,13 @@ import { ReceiptModel } from '../models/receiptModel.js';
 import QRCode from 'qrcode';
 
 // Hàm helper để tạo chuỗi dữ liệu QR Code từ thông tin lô hàng
-// HÀM NÀY CHỈ DÙNG TRONG getQRCode NẾU THIẾU DỮ LIỆU HOẶC TRONG MODEL
 const generateQrCodeData = (lotInfo) => {
     return JSON.stringify({
         id: lotInfo.id,
         lotCode: lotInfo.lot_code,
+        waterType: lotInfo.water_type || 'N/A',
         quantity: lotInfo.quantity,
-        supplier: lotInfo.supplier
+        supplier: lotInfo.supplier || 'N/A'
     });
 };
 
@@ -18,29 +18,26 @@ export const receiptController = {
     // [POST] /api/receipts
     createReceipt: async (req, res) => {
         try {
-            // Lấy userId từ token/session (Giả định user ID là 1 nếu chưa có auth)
-            const userId = req.user ? req.user.id : 1;
+            // Giả định userId là 1 nếu chưa có auth
+            const userId = req.user ? req.user.id : 1; 
             
             // 1. Tạo lô hàng
-            // Hàm này thực hiện TẤT CẢ: tạo Supplier, Delivery Person, tạo Lot, và lưu trữ QR_CODE_DATA
-            const newLotResult = await ReceiptModel.createReceiptLot(req.body, userId);
+            const newLotResult = await ReceiptModel.create(req.body, userId);
             
             // 2. Format kết quả trả về
             res.status(201).json({
                 message: "Ghi nhận lô hàng nhập kho thành công. Dữ liệu QR code đã được lưu trữ.",
                 data: {
                     ...newLotResult,
-                    // Thêm lại các trường cần thiết từ req.body nếu newLotResult không trả về
+                    waterType: req.body.waterType, 
                     supplier: req.body.supplier, 
                     deliveryPerson: req.body.deliveryPerson,
-                    // Format lại ngày tháng
                     receiptDate: new Date(newLotResult.receipt_date).toLocaleDateString('vi-VN')
                 }
             });
 
         } catch (error) {
             console.error('Error creating receipt lot:', error);
-            // Kiểm tra lỗi không tìm thấy loại nước (hoặc lỗi Validation khác)
             const statusCode = error.message.includes("not found") ? 400 : 500; 
             res.status(statusCode).json({ 
                 message: `Lỗi Server khi tạo lô hàng. ${error.message}`,
@@ -53,7 +50,7 @@ export const receiptController = {
     getReceipts: async (req, res) => {
         try {
             const searchTerm = req.query.search || '';
-            const receipts = await ReceiptModel.getReceiptLots(searchTerm);
+            const receipts = await ReceiptModel.find(searchTerm);
             res.status(200).json(receipts);
         } catch (error) {
             console.error('Error fetching receipt lots:', error);
@@ -79,7 +76,7 @@ export const receiptController = {
                 return res.status(400).json({ message: "Trạng thái không hợp lệ." });
             }
 
-            const updatedLot = await ReceiptModel.updateLotStatus(lotId, status);
+            const updatedLot = await ReceiptModel.updateStatus(lotId, status);
 
             if (!updatedLot) {
                 return res.status(404).json({ message: "Không tìm thấy lô hàng để cập nhật." });
@@ -104,15 +101,15 @@ export const receiptController = {
         try {
             const lotId = req.params.id;
             
-            const deletedLot = await ReceiptModel.deleteReceiptLot(lotId);
+            const deletedRowsCount = await ReceiptModel.delete(lotId);
 
-            if (!deletedLot) {
+            if (deletedRowsCount === 0) {
                 return res.status(404).json({ message: "Không tìm thấy lô hàng để xóa." });
             }
 
             res.status(200).json({
-                message: `Đã xóa lô hàng ${deletedLot.lot_code} thành công.`,
-                data: deletedLot
+                message: `Đã xóa lô hàng ID ${lotId} thành công.`,
+                data: { id: lotId }
             });
 
         } catch (error) {
@@ -129,8 +126,8 @@ export const receiptController = {
         try {
             const lotId = req.params.id;
             
-            // 1. Lấy dữ liệu lô hàng
-            const lot = await ReceiptModel.getLotById(lotId); 
+            // 1. Lấy dữ liệu lô hàng (đã có JOIN)
+            const lot = await ReceiptModel.findById(lotId); 
             
             if (!lot) {
                 return res.status(404).json({ message: "Không tìm thấy lô hàng." });
@@ -140,21 +137,18 @@ export const receiptController = {
             let qrCodeData = lot.qr_code_data; 
             
             if (!qrCodeData) {
-                // Nếu dữ liệu QR code bị thiếu, tạo lại và cập nhật vào DB
                 console.warn(`Lô hàng ${lotId} thiếu dữ liệu QR code. Đang tạo lại và cập nhật.`);
                 
-                // Lấy thông tin supplier
-                // LƯU Ý: Nếu cần tên Supplier/Delivery Person cho QR code data, 
-                // bạn cần JOIN chúng trong getLotById hoặc truyền nó từ Controller vào Model.
-                
+                // TẠO DỮ LIỆU MỚI
                 const newQrData = generateQrCodeData({
                     id: lot.id,
                     lot_code: lot.lot_code,
                     quantity: lot.quantity,
-                    supplier: lot.supplier_name || 'UNKNOWN' // Placeholder
+                    water_type: lot.water_type, 
+                    supplier: lot.supplier 
                 });
                 
-                // Cập nhật vào DB để lần sau có thể sử dụng lại
+                // Cập nhật vào DB (Sử dụng hàm đã thêm vào Model)
                 await ReceiptModel.updateLotQrCodeData(lotId, newQrData); 
                 qrCodeData = newQrData; // Sử dụng dữ liệu mới để tạo hình ảnh
             }
@@ -172,7 +166,8 @@ export const receiptController = {
 
             res.status(200).json({ 
                 qrCodeImage: base64WithoutPrefix, 
-                encodedData: qrCodeData
+                encodedData: qrCodeData,
+                lotCode: lot.lot_code
             });
 
         } catch (error) {
