@@ -10,12 +10,12 @@ export const MasterModel = {
         try {
             const query = `
                 SELECT 
-    product_id AS id, 
-    name
-FROM 
-    water_product
-ORDER BY 
-    name ASC;`; 
+                    product_id AS id, 
+                    name
+                FROM 
+                    water_product
+                ORDER BY 
+                    name ASC;`; 
             
             const result = await pool.query(query);
             return result.rows;
