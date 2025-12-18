@@ -1,14 +1,13 @@
-"use client";
+
 
 import React from 'react';
-import WaterDeliveryPageUI from './WaterDeliveryPageUI'; 
-import { useWaterDeliveryLogic, initialDeliveries } from './WaterDeliveryLogic'; 
+import  WaterDeliveryLogic  from './WaterDeliveryLogic'; 
 
-const WaterDeliveryPage: React.FC = () => {
-    // Luôn truyền initialDeliveries (đã được export mảng rỗng trong logic)
-    const logicProps = useWaterDeliveryLogic(initialDeliveries);
-
-    return <WaterDeliveryPageUI {...logicProps} />;
+const WaterDeliveryPage =() => {
+   
+    return (
+    <WaterDeliveryLogic/>
+)
 };
 
 export default WaterDeliveryPage;

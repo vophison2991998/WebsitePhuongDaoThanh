@@ -6,11 +6,6 @@ import { useToast } from "@/components/ui/ToastContext";
 // ❗️ Import UI Component
 import WaterReceiptPageUI from './WaterReceiptPageUI';
 
-// -----------------------------------------------------------
-// 1. TYPING & CONSTANTS
-// -----------------------------------------------------------
-
-// Khai báo lại các Interface để đảm bảo tính rõ ràng (Mặc dù đã có trong UIProps)
 interface WaterType {
     id: number;
     name: string;
@@ -96,10 +91,6 @@ const WaterReceiptLogic: React.FC = () => {
     });
 
 
-    // -----------------------------------------------------------
-    // 3. HÀM API VÀ LOGIC
-    // -----------------------------------------------------------
-    
     const fetchWaterTypes = useCallback(async () => {
         setIsTypesLoading(true);
         try {
