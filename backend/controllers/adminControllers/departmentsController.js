@@ -1,4 +1,4 @@
-import * as departmentsModel from '../models/departmentsModel.js';
+import * as departmentsModel from '../../models/adminModels/departmentsModel.js';
 
 export const getDepartments = async (req, res) => {
     try {

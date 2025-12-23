@@ -3,7 +3,7 @@
 import express from 'express';
 const router = express.Router(); 
 
-import { masterController } from '../controllers/masterController.js'; 
+import { masterController } from '../../controllers/adminControllers/masterController.js'; 
 
 /**
  * Định tuyến cho nghiệp vụ Master Data

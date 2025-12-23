@@ -1,4 +1,4 @@
-import DeliveryModel from '../models/deliveryModel.js';
+import DeliveryModel from '../../models/adminModels/deliveryModel.js';
 
 // Lấy danh sách
 export const getDeliveries = async (req, res) => {

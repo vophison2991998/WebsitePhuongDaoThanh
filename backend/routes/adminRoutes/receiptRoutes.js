@@ -3,7 +3,7 @@
 import express from 'express';
 const router = express.Router(); 
 
-import { receiptController } from '../controllers/receiptController.js'; 
+import { receiptController } from '../../controllers/adminControllers/receiptController.js'; 
 // import { protect } from '../middleware/authMiddleware.js'; 
 
 /**

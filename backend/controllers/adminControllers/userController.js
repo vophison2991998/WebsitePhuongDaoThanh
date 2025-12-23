@@ -1,4 +1,4 @@
-import userModel from "../models/userModel.js";
+import userModel from "../../models/adminModels/userModel.js";
 import bcrypt from "bcrypt";
 
 // Đảm bảo dùng đúng tên createNewAccount

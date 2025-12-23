@@ -2,15 +2,16 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import authRouter from "./routes/authRouter.js";
-import userRouter from "./routes/userRoutes.js"; 
-import receiptRoutes from './routes/receiptRoutes.js';
-import masterRoutes from './routes/masterRoutes.js'; 
-import departmentsRouter from './routes/departmentsRouter.js';
-// 1. IMPORT ROUTER GIAO NƯỚC MỚI
-import deliveryRoutes from './routes/deliveryRoutes.js'; 
+import userRouter from "./routes/adminRoutes/userRoutes.js"; 
+import receiptRoutes from './routes/adminRoutes/receiptRoutes.js';
+import masterRoutes from './routes/adminRoutes/masterRoutes.js'; 
+import departmentsRouter from './routes/adminRoutes/departmentsRouter.js';
+import deliveryRoutes from './routes/adminRoutes/deliveryRoutes.js'; 
+
+// IMPORT MIDDLEWARE
+import { protect, authorize } from "./middleware/authMiddleware.js";
 
 dotenv.config();
-
 const app = express();
 
 app.use(cors({
@@ -20,21 +21,22 @@ app.use(cors({
 
 app.use(express.json());
 
-// =========================================
-// CÁC TUYẾN ĐƯỜNG API (ROUTES)
-// =========================================
+// 1. PUBLIC ROUTES (Không cần đăng nhập)
 app.use("/api/auth", authRouter);
-app.use("/api/users", userRouter); 
-app.use('/api/receipts', receiptRoutes); 
-app.use('/api/master', masterRoutes); 
-app.use('/api/departments', departmentsRouter);
 
+// 2. KÍCH HOẠT BẢO VỆ (Tất cả phía dưới đều cần Token)
+app.use(protect); 
 
-app.use('/api/deliveries', deliveryRoutes); 
+// 3. PRIVATE ROUTES (Đã đăng nhập + Kiểm tra quyền cụ thể)
+app.use("/api/users", authorize("ADMIN"), userRouter);
+app.use('/api/departments', authorize("ADMIN"), departmentsRouter);
 
-// =========================================
-// KHỞI CHẠY SERVER
-// =========================================
+app.use('/api/receipts', authorize("ADMIN", "WAREHOUSE"), receiptRoutes);
+app.use('/api/master', authorize("ADMIN", "WAREHOUSE"), masterRoutes);
+
+app.use('/api/deliveries', authorize("ADMIN", "WAREHOUSE", "DELIVERY"), deliveryRoutes);
+
+// KHỞI CHẠY
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () =>
   console.log(`🚀 Server chạy tại http://localhost:${PORT}`)

@@ -5,7 +5,7 @@ import {
   deleteUserAccount, 
   changeUserRole,
   toggleStatus // Import hàm mới
-} from "../controllers/userController.js";
+} from "../../controllers/adminControllers/userController.js";
 
 const router = express.Router();
 

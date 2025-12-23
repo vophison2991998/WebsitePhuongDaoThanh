@@ -1,6 +1,6 @@
 // backend/models/receiptModel.js
 
-import pool from '../config/db.js'; 
+import pool from '../../config/db.js'; 
 import QRCode from 'qrcode'; 
 
 /**

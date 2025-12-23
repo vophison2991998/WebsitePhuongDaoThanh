@@ -1,6 +1,6 @@
 // backend/controllers/masterController.js
 
-import { MasterModel } from '../models/masterModel.js';
+import { MasterModel } from '../../models/adminModels/masterModel.js';
 
 export const masterController = {
     /**

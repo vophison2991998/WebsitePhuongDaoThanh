@@ -1,6 +1,6 @@
 // backend/models/masterModel.js
 
-import pool from '../config/db.js';
+import pool from '../../config/db.js';
 
 export const MasterModel = {
     /**

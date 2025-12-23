@@ -1,6 +1,6 @@
 // backend/controllers/receiptController.js
 
-import { ReceiptModel } from '../models/receiptModel.js';
+import { ReceiptModel } from '../../models/adminModels/receiptModel.js';
 import QRCode from 'qrcode';
 
 // Hàm helper để tạo chuỗi dữ liệu QR Code từ thông tin lô hàng
