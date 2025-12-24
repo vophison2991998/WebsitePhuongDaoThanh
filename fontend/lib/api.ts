@@ -1,24 +1,26 @@
-export async function loginApi(payload: any) {
-  const res = await fetch("http://localhost:5000/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message);
-  return data;
-}
-// frontend/lib/api.ts
 import axios from 'axios';
-import Cookies from 'js-cookie';
 
-const API_URL = 'http://localhost:5000/api';
+const api = axios.create({
+    baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
+    withCredentials: true, // Quan trọng để gửi kèm cookie nếu backend yêu cầu
+});
 
-export const fetchAllUsers = async () => {
-    const token = Cookies.get('token');
-    const response = await axios.get(`${API_URL}/admin/users`, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    return response.data;
+// Hàm helper lấy cookie
+const getCookie = (name: string) => {
+    if (typeof document === 'undefined') return null;
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop()?.split(';').shift();
+    return null;
 };
+
+// Interceptor gắn Token vào mỗi Request
+api.interceptors.request.use((config) => {
+    const token = getCookie('token'); 
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
+export default api;

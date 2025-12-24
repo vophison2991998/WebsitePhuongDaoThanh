@@ -1,20 +1,31 @@
-// frontend/proxy.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ROLE_BY_PATH, ROUTE_MAP } from "@/lib/routeMap";
-import { decryptData } from "@/lib/encryption"; // Đảm bảo hàm này đã sẵn sàng
+import { decryptData } from "@/lib/encryption";
 
-export function proxy(req: NextRequest) {
+/**
+ * Phân cấp quyền hạn (Hierarchy)
+ * Cấp độ cao hơn sẽ có quyền truy cập của cấp độ thấp hơn.
+ */
+const ROLE_HIERARCHY = ["USER", "MANAGER", "ADMIN"];
+
+/**
+ * Hàm Proxy/Middleware mặc định xử lý mọi Request
+ */
+export default function proxy(req: NextRequest) {
   const token = req.cookies.get("token")?.value;
   const encryptedRole = req.cookies.get("user_role")?.value;
   const path = req.nextUrl.pathname;
 
   // 1. Giải mã Role từ Cookies
-  // userRole sẽ nhận giá trị gốc như "ADMIN", "MANAGER", hoặc "USER"
-  const userRole = encryptedRole ? decryptData(encryptedRole) : null;
+  let userRole: string | null = null;
+  try {
+    userRole = encryptedRole ? decryptData(encryptedRole) : null;
+  } catch (error) {
+    userRole = null; // Giải mã thất bại (có thể do bị can thiệp)
+  }
 
-  // 2. Kiểm tra tính toàn vẹn của Role
-  // Nếu có chuỗi mã hóa nhưng giải mã thất bại (bị sửa đổi), xóa cookie và đá về login
+  // 2. Kiểm tra tính toàn vẹn của Role (Security Check)
   if (encryptedRole && !userRole) {
     const response = NextResponse.redirect(new URL("/login", req.url));
     response.cookies.delete("token");
@@ -22,39 +33,46 @@ export function proxy(req: NextRequest) {
     return response;
   }
 
-  // 3. Trường hợp chưa đăng nhập (không có token)
+  // 3. Xử lý khi CHƯA đăng nhập
   if (!token) {
-    // Nếu cố truy cập vào vùng portal, bắt buộc về login
     if (path.startsWith("/portal")) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
     return NextResponse.next();
   }
 
-  // 4. Trường hợp đã đăng nhập (có token và userRole hợp lệ)
+  // 4. Xử lý khi ĐÃ đăng nhập
   if (token && userRole) {
-    // Nếu đang ở trang login mà đã có session, đẩy về trang chủ theo Role
+    // Nếu đang ở trang login hoặc trang chủ mà đã có session -> Chuyển hướng về Dashboard tương ứng
     if (path === "/login" || path === "/") {
       const targetPath = ROUTE_MAP[userRole as keyof typeof ROUTE_MAP] || "/login";
       return NextResponse.redirect(new URL(targetPath, req.url));
     }
 
-    // Kiểm tra quyền truy cập vào đường dẫn cụ thể trong /portal
-    const requiredRoleEntry = Object.entries(ROLE_BY_PATH).find(([route]) =>
-      path.startsWith(route)
-    );
-    const requiredRole = requiredRoleEntry ? requiredRoleEntry[1] : null;
+    // Kiểm tra quyền truy cập vào vùng /portal
+    if (path.startsWith("/portal")) {
+      // Tìm quyền yêu cầu tối thiểu dựa trên routeMap
+      const requiredRoleEntry = Object.entries(ROLE_BY_PATH).find(([route]) =>
+        path.startsWith(route)
+      );
+      
+      const requiredRole = requiredRoleEntry ? requiredRoleEntry[1] : null;
 
-    if (requiredRole) {
-      const hierarchy = ["USER", "MANAGER", "ADMIN"];
-      const userLevel = hierarchy.indexOf(userRole);
-      const routeLevel = hierarchy.indexOf(requiredRole);
+      if (requiredRole) {
+        const userLevel = ROLE_HIERARCHY.indexOf(userRole.toUpperCase());
+        const requiredLevel = ROLE_HIERARCHY.indexOf(requiredRole.toUpperCase());
 
-      // Nếu cấp độ người dùng thấp hơn yêu cầu của trang (ví dụ: USER vào portal ADMIN)
-      if (userLevel < routeLevel) {
-        // Đưa người dùng về vùng an toàn của chính họ thay vì trang login
-        const safePath = ROUTE_MAP[userRole as keyof typeof ROUTE_MAP];
-        return NextResponse.redirect(new URL(safePath, req.url));
+        // Nếu cấp độ người dùng thấp hơn yêu cầu của trang (Ví dụ: USER vào /portal/admin)
+        if (userLevel < requiredLevel) {
+          // Chuyển hướng về vùng an toàn của chính họ
+          const safePath = ROUTE_MAP[userRole as keyof typeof ROUTE_MAP] || "/login";
+          const response = NextResponse.redirect(new URL(safePath, req.url));
+          
+          // Tùy chọn: Bạn có thể thêm header để thông báo cho frontend biết truy cập bị từ chối
+          response.headers.set('x-access-denied', 'true');
+          
+          return response;
+        }
       }
     }
   }
@@ -62,7 +80,17 @@ export function proxy(req: NextRequest) {
   return NextResponse.next();
 }
 
-// Giới hạn Middleware chạy cho các route cần thiết
+/**
+ * Cấu hình các route mà Middleware này sẽ chạy qua
+ */
 export const config = {
-  matcher: ["/portal/:path*", "/login", "/"],
+  matcher: [
+    /*
+     * Khớp tất cả các đường dẫn bắt đầu bằng /portal
+     * Khớp chính xác trang /login và trang chủ /
+     */
+    "/portal/:path*", 
+    "/login", 
+    "/"
+  ],
 };
