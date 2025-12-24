@@ -1,59 +1,79 @@
 import db from '../../config/db.js';
 
 const DeliveryModel = {
+    /**
+     * Lấy danh sách tất cả đơn hàng (Gồm tên phòng ban, tên sản phẩm và tên trạng thái)
+     */
     getAll: async () => {
-        const sql = `                       
+        const sql = `                    
             SELECT 
                 d.delivery_id,
                 d.recipient_name,
                 dept.name AS department_name,      
                 p.name AS product_name,           
-                p.unit,                           
+                p.unit,                                          
                 d.quantity,
                 d.delivery_time,
-                d.status,
-                d.qr_code_data,                  
+                ds.name AS status, -- Lấy tên trạng thái từ bảng delivery_status
+                d.status_id,      -- Giữ ID để xử lý logic nếu cần
+                d.note,
                 d.updated_at
             FROM deliveries d
             LEFT JOIN departments dept ON d.dept_id = dept.id
             LEFT JOIN water_product p ON d.product_id = p.product_id
+            LEFT JOIN delivery_status ds ON d.status_id = ds.id
+            WHERE d.deleted_at IS NULL -- Chỉ lấy các đơn chưa xóa (Soft Delete)
             ORDER BY d.delivery_time DESC;
             `;
         const { rows } = await db.query(sql);
         return rows;
     },
 
-  create: async (data) => {
-    const { 
-        delivery_id, 
-        recipient_name, 
-        dept_id, 
-        product_id, 
-        quantity, 
-        delivery_time, 
-        note, 
-        qr_code_data 
-    } = data;
+    /**
+     * Tạo đơn hàng mới (Sử dụng status_id thay vì status văn bản)
+     */
+    create: async (data) => {
+        const { 
+            delivery_id, 
+            recipient_name, 
+            dept_id, 
+            product_id, 
+            quantity, 
+            delivery_time, 
+            status_id, // Truyền ID trạng thái (VD: 1 cho PROCESSING, 2 cho COMPLETED)
+            note 
+        } = data;
 
-    const sql = `
-        INSERT INTO deliveries (
-            delivery_id, recipient_name, dept_id, product_id, 
-            quantity, delivery_time, note, qr_code_data
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-        RETURNING *;
-    `;
-    
-    // Nếu note hoặc qr_code_data không có, nó sẽ tự chèn NULL vào DB
-    const { rows } = await db.query(sql, [
-        delivery_id, recipient_name, dept_id, product_id, 
-        quantity, delivery_time, note || null, qr_code_data || null
-    ]);
-    return rows[0];
-},
+        const sql = `
+            INSERT INTO deliveries (
+                delivery_id, recipient_name, dept_id, product_id, 
+                quantity, delivery_time, status_id, note
+            )
+            VALUES (
+                COALESCE($1, 'ORD-' || UPPER(SUBSTR(gen_random_uuid()::text, 1, 8))), 
+                $2, $3, $4, $5, $6, $7, $8
+            ) 
+            RETURNING *;
+        `;
+        
+        const { rows } = await db.query(sql, [
+            delivery_id || null, 
+            recipient_name, 
+            dept_id, 
+            product_id, 
+            quantity, 
+            delivery_time || new Date(), 
+            status_id || 1, // Mặc định là trạng thái đầu tiên nếu không truyền
+            note || null
+        ]);
+        return rows[0];
+    },
 
-  update: async (id, data) => {
-        const { recipient_name, dept_id, product_id, quantity, delivery_time, note } = data;
+    /**
+     * Cập nhật thông tin đơn hàng
+     */
+    update: async (id, data) => {
+        const { recipient_name, dept_id, product_id, quantity, delivery_time, status_id, note } = data;
         
         const sql = `
             UPDATE deliveries 
@@ -63,9 +83,10 @@ const DeliveryModel = {
                 product_id = COALESCE($3, product_id), 
                 quantity = COALESCE($4, quantity), 
                 delivery_time = COALESCE($5, delivery_time), 
-                note = COALESCE($6, note), 
+                status_id = COALESCE($6, status_id),
+                note = COALESCE($7, note), 
                 updated_at = NOW()
-            WHERE delivery_id = $7 
+            WHERE delivery_id = $8 AND deleted_at IS NULL
             RETURNING *;`;
 
         try {
@@ -75,6 +96,7 @@ const DeliveryModel = {
                 product_id ?? null, 
                 quantity ?? null, 
                 delivery_time ?? null, 
+                status_id ?? null,
                 note ?? null, 
                 id
             ];
@@ -87,17 +109,17 @@ const DeliveryModel = {
     },
 
     /**
-     * Cập nhật riêng trạng thái đơn hàng
+     * Cập nhật riêng trạng thái đơn hàng (Sử dụng ID trạng thái)
      */
-  updateStatus: async (id, status) => {
+    updateStatus: async (id, statusId) => {
         const sql = `
             UPDATE deliveries 
-            SET status = $1, updated_at = NOW() 
-            WHERE delivery_id = $2 
+            SET status_id = $1, updated_at = NOW() 
+            WHERE delivery_id = $2 AND deleted_at IS NULL
             RETURNING *;`;
         
         try {
-            const { rows } = await db.query(sql, [status, id]);
+            const { rows } = await db.query(sql, [statusId, id]);
             return rows[0] || null;
         } catch (error) {
             console.error("Error in DeliveryModel.updateStatus:", error);
@@ -106,14 +128,14 @@ const DeliveryModel = {
     },
 
     /**
-     * Xóa phiếu giao hàng và trả về kết quả thành công/thất bại
+     * Xóa đơn hàng (Thực hiện Soft Delete theo cấu trúc V10.3)
      */
     delete: async (id) => {
-        const sql = `DELETE FROM deliveries WHERE delivery_id = $1;`;
+        // Chuyển từ DELETE vật lý sang UPDATE deleted_at để đưa vào thùng rác
+        const sql = `UPDATE deliveries SET deleted_at = NOW() WHERE delivery_id = $1;`;
         
         try {
             const result = await db.query(sql, [id]);
-            // rowCount > 0 nghĩa là có ít nhất 1 dòng đã bị xóa
             return result.rowCount > 0;
         } catch (error) {
             console.error("Error in DeliveryModel.delete:", error);

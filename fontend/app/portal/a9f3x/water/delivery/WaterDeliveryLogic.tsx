@@ -1,26 +1,20 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import axios from 'axios';
-import WaterDeliveryPageUI, { 
-    DeliveryItem 
-} from './WaterDeliveryPageUI';
-
-// --- Cấu hình API Endpoint ---
-const API_BASE = 'http://localhost:5000/api';
-const MASTER_WATER_URL = `${API_BASE}/master/water-types`;
-const DEPARTMENTS_URL = `${API_BASE}/departments`;
-const DELIVERY_API_URL = `${API_BASE}/deliveries`;
-
-interface MasterEntry {
-    id: string | number;
-    name: string;
-    product_id?: string; 
-}
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import WaterDeliveryPageUI, { DeliveryItem } from './WaterDeliveryPageUI';
+import { waterDeliveryApi } from './waterDeliveryApi';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 
 export const useWaterDeliveryLogic = (initialData: DeliveryItem[] = []) => {
-    const [waterTypesData, setWaterTypesData] = useState<MasterEntry[]>([]);
-    const [deptsData, setDeptsData] = useState<MasterEntry[]>([]);
+    // --- STATE CHO CONFIRM MODAL ---
+    const [confirmConfig, setConfirmConfig] = useState<{
+        isOpen: boolean; title: string; message: string;
+        type: "danger" | "warning" | "info"; onConfirm: () => void;
+    }>({ isOpen: false, title: '', message: '', type: 'warning', onConfirm: () => {} });
+
+    // --- STATE DỮ LIỆU ---
+    const [waterTypesData, setWaterTypesData] = useState<any[]>([]);
+    const [deptsData, setDeptsData] = useState<any[]>([]);
     const [allDeliveries, setAllDeliveries] = useState<DeliveryItem[]>(initialData);
     const [isLoading, setIsLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -28,146 +22,152 @@ export const useWaterDeliveryLogic = (initialData: DeliveryItem[] = []) => {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
     const [formData, setFormData] = useState({
-        quantity: "1", 
-        waterType: "", 
-        recipientName: '',
-        department: "", 
-        content: '',
+        quantity: "1", waterType: "", recipientName: '',
+        department: "", content: '',
         deliveryTime: new Date().toISOString().substring(0, 16),
     });
 
-    // --- 1. FETCH DỮ LIỆU ---
+    // --- FETCH DATA ---
     const fetchAllData = useCallback(async () => {
+        setIsLoading(true);
         try {
-            const [resWater, resDepts, resDeliveries] = await Promise.all([
-                axios.get(MASTER_WATER_URL),
-                axios.get(DEPARTMENTS_URL),
-                axios.get(DELIVERY_API_URL)
-            ]);
+            const [resWater, resDepts, resDeliveries] = await waterDeliveryApi.getInitialData();
 
-            const wData = resWater.data.data || [];
-            const dData = resDepts.data.data || [];
-            setWaterTypesData(wData);
-            setDeptsData(dData);
+            const waterTypes = resWater.data.data || [];
+            const depts = resDepts.data.data || [];
+            const deliveries = resDeliveries.data.data || [];
 
-            const mapped = (resDeliveries.data.data || []).map((item: any) => ({
+            setWaterTypesData(waterTypes);
+            setDeptsData(depts);
+
+            // Map dữ liệu từ API vào giao diện
+            const mapped = deliveries.map((item: any) => ({
                 id: item.delivery_id,
                 recipient: item.recipient_name,
                 dept: item.department_name,
                 quantity: item.quantity,
                 waterType: item.product_name,
-                status: item.status || 'Chờ giao',
+                status: item.status, 
                 date: new Date(item.delivery_time).toLocaleDateString('vi-VN'),
                 content: item.note
             }));
             setAllDeliveries(mapped);
 
-            if (wData.length > 0 && dData.length > 0 && !formData.waterType) {
+            // Auto-select giá trị mặc định cho dropdown nếu chưa có
+            if (waterTypes.length > 0 || depts.length > 0) {
                 setFormData(prev => ({
                     ...prev,
-                    waterType: wData[0].product_id || wData[0].id,
-                    department: dData[0].id
+                    waterType: prev.waterType || (waterTypes[0]?.product_id || waterTypes[0]?.id || ""),
+                    department: prev.department || (depts[0]?.id || "")
                 }));
             }
-        } catch (e) {
-            console.error("Lỗi tải dữ liệu:", e);
+            
+            // Xóa thông báo lỗi nếu tải lại thành công
+            if (message?.text.includes('Phiên')) setMessage(null);
+
+        } catch (e: any) {
+            console.error("Lỗi Fetch Data:", e);
+            if (e.response?.status === 401) {
+                setMessage({ type: 'error', text: 'Phiên đăng nhập hết hạn! Vui lòng tải lại trang hoặc đăng nhập lại.' });
+            } else {
+                setMessage({ type: 'error', text: 'Không thể kết nối đến máy chủ.' });
+            }
+        } finally {
+            setIsLoading(false);
         }
-    }, [formData.waterType]);
+    }, [message?.text]);
 
-    useEffect(() => { fetchAllData(); }, [fetchAllData]);
+    useEffect(() => { 
+        fetchAllData(); 
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Chỉ chạy 1 lần khi mount
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+    // --- ACTIONS ---
+    const handleDelete = (id: string) => {
+        setConfirmConfig({
+            isOpen: true,
+            title: "Xác nhận xóa",
+            message: `Bạn có chắc chắn muốn xóa đơn hàng ${id}?`,
+            type: "danger",
+            onConfirm: async () => {
+                try {
+                    await waterDeliveryApi.deleteDelivery(id);
+                    setAllDeliveries(prev => prev.filter(item => item.id !== id));
+                    setMessage({ type: 'success', text: 'Đã xóa đơn hàng thành công!' });
+                } catch (err) { 
+                    setMessage({ type: 'error', text: 'Lỗi khi xóa đơn hàng.' }); 
+                }
+                setConfirmConfig(p => ({ ...p, isOpen: false }));
+            }
+        });
     };
 
-    // --- 2. TẠO MỚI ĐƠN HÀNG ---
+    const handleUpdateStatus = (id: string, currentStatus: string) => {
+        const isCompleted = currentStatus.includes('Hoàn thành');
+        const newStatusId = isCompleted ? 1 : 2; // Toggle 1 <-> 2
+        const statusLabel = newStatusId === 2 ? "Hoàn thành" : "Đang xử lý";
+
+        setConfirmConfig({
+            isOpen: true,
+            title: "Cập nhật trạng thái",
+            message: `Chuyển đơn ${id} sang "${statusLabel}"?`,
+            type: "info",
+            onConfirm: async () => {
+                try {
+                    await waterDeliveryApi.updateStatus(id, newStatusId);
+                    await fetchAllData();
+                    setMessage({ type: 'success', text: 'Cập nhật thành công!' });
+                } catch (err) { 
+                    setMessage({ type: 'error', text: 'Lỗi cập nhật trạng thái.' }); 
+                }
+                setConfirmConfig(p => ({ ...p, isOpen: false }));
+            }
+        });
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!formData.recipientName) {
+            setMessage({ type: 'error', text: 'Vui lòng nhập tên người nhận.' });
+            return;
+        }
+
         setIsLoading(true);
         try {
-            const orderId = `ORD-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-            const payload = {
-                delivery_id: orderId,
-                recipient_name: formData.recipientName,
-                dept_id: formData.department,
-                product_id: formData.waterType,
-                quantity: parseInt(formData.quantity),
-                delivery_time: formData.deliveryTime,
-                note: formData.content,
-                qr_code_data: orderId,
-                status: 'Chờ giao'
-            };
-
-            const response = await axios.post(DELIVERY_API_URL, payload);
-            if (response.data.success) {
-                await fetchAllData();
-                setMessage({ type: 'success', text: `Đã tạo đơn ${orderId} thành công!` });
-                setFormData(prev => ({ ...prev, recipientName: '', content: '' }));
-            }
-        } catch (err) {
-            setMessage({ type: 'error', text: 'Lỗi khi lưu đơn hàng.' });
-        } finally { setIsLoading(false); }
-    };
-
-    // --- 3. CẬP NHẬT TRẠNG THÁI ---
-    const handleUpdateStatus = async (id: string, newStatus: string) => {
-        try {
-            const response = await axios.patch(`${DELIVERY_API_URL}/${id}/status`, {
-                status: newStatus
-            });
-            
-            if (response.data.success) {
-                setAllDeliveries(prev => 
-                    prev.map(item => item.id === id ? { ...item, status: newStatus } : item)
-                );
-                setMessage({ type: 'success', text: 'Cập nhật trạng thái thành công!' });
-            }
-        } catch (err) {
-            console.error(err);
-            setMessage({ type: 'error', text: 'Không thể cập nhật trạng thái.' });
+            await waterDeliveryApi.createDelivery(formData);
+            await fetchAllData();
+            setMessage({ type: 'success', text: `Tạo đơn hàng mới thành công!` });
+            setFormData(prev => ({ ...prev, recipientName: '', content: '' })); 
+        } catch (err: any) { 
+            const errorMsg = err.response?.status === 401 ? 'Hết hạn phiên làm việc.' : 'Lỗi lưu đơn hàng.';
+            setMessage({ type: 'error', text: errorMsg }); 
+        } finally { 
+            setIsLoading(false); 
         }
     };
 
-    // --- 4. XÓA ĐƠN HÀNG ---
-    const handleDelete = async (id: string) => {
-
-        try {
-            const response = await axios.delete(`${DELIVERY_API_URL}/${id}`);
-            if (response.data.success) {
-                setAllDeliveries(prev => prev.filter(item => item.id !== id));
-                setMessage({ type: 'success', text: 'Đã xóa đơn hàng thành công!' });
-            }
-        } catch (err: any) {
-            const errorMsg = err.response?.data?.message || "Không thể xóa đơn hàng.";
-            setMessage({ type: 'error', text: errorMsg });
-        }
-    };
-
-    // --- 5. XỬ LÝ HIỂN THỊ ---
+    // --- SEARCH LOGIC ---
     const filteredDeliveries = useMemo(() => {
         const term = searchTerm.toLowerCase();
-        return allDeliveries.filter(d =>
-            d.recipient.toLowerCase().includes(term) || d.id.toLowerCase().includes(term)
+        return allDeliveries.filter(d => 
+            d.recipient.toLowerCase().includes(term) || 
+            d.id.toLowerCase().includes(term) ||
+            d.dept.toLowerCase().includes(term)
         );
     }, [allDeliveries, searchTerm]);
 
-    const getStatusColor = (status: string) => {
-        const s = status.toLowerCase();
-        if (s.includes('đang giao')) return 'bg-blue-100 text-blue-800 border-blue-300';
-        if (s.includes('chờ giao')) return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-        if (s.includes('đã giao')) return 'bg-green-100 text-green-800 border-green-300';
-        if (s.includes('hủy')) return 'bg-red-100 text-red-800 border-red-300';
-        return 'bg-gray-100 text-gray-800 border-gray-300';
-    };
-
     return {
         formData, isLoading, message, deliveries: filteredDeliveries,
-        selectedOrder, searchTerm, 
-        waterTypes: waterTypesData, 
-        departments: deptsData, 
-        handleChange, handleSubmit, setSearchTerm, setSelectedOrder, getStatusColor,
-        handleUpdateStatus, handleDelete // Đã thêm handleDelete vào đây
+        selectedOrder, searchTerm, waterTypes: waterTypesData, departments: deptsData,
+        confirmConfig, setConfirmConfig, 
+        handleChange: (e: any) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value })),
+        handleSubmit, setSearchTerm, setSelectedOrder, handleUpdateStatus, handleDelete,
+        getStatusColor: (status: string) => {
+            const s = status?.toLowerCase() || '';
+            if (s.includes('xử lý')) return 'bg-blue-100 text-blue-800 border-blue-300';
+            if (s.includes('hoàn thành')) return 'bg-green-100 text-green-800 border-green-300';
+            return 'bg-gray-100 text-gray-800 border-gray-300';
+        }
     };
 };
 
@@ -175,11 +175,23 @@ const WaterDeliveryLogic: React.FC = () => {
     const logic = useWaterDeliveryLogic();
     
     return (
-        <WaterDeliveryPageUI 
-            {...logic} 
-            waterTypes={logic.waterTypes.map(t => t.name)}
-            departments={logic.departments.map(d => d.name)}
-        />
+        <>
+            <WaterDeliveryPageUI 
+                {...logic} 
+                // Đồng bộ hóa tên trường từ API Object sang UI Props
+                waterTypes={logic.waterTypes.map(t => ({ id: t.product_id || t.id, name: t.name }))}
+                departments={logic.departments.map(d => ({ id: d.id, name: d.name }))}
+            />
+
+            <ConfirmModal 
+                isOpen={logic.confirmConfig.isOpen}
+                title={logic.confirmConfig.title}
+                message={logic.confirmConfig.message}
+                type={logic.confirmConfig.type}
+                onConfirm={logic.confirmConfig.onConfirm}
+                onCancel={() => logic.setConfirmConfig(p => ({ ...p, isOpen: false }))}
+            />
+        </>
     );
 };
 

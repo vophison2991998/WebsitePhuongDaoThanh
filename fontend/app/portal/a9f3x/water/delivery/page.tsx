@@ -1,13 +1,16 @@
-
+// app/portal/a9f3x/water/delivery/page.tsx
+"use client";
 
 import React from 'react';
-import  WaterDeliveryLogic  from './WaterDeliveryLogic'; 
+// Đảm bảo đường dẫn này đúng với cấu trúc file trong ảnh của bạn
+import WaterDeliveryLogic from './WaterDeliveryLogic'; 
 
-const WaterDeliveryPage =() => {
-   
+const WaterDeliveryPage = () => {
     return (
-    <WaterDeliveryLogic/>
-)
+        <main>
+            <WaterDeliveryLogic />
+        </main>
+    );
 };
 
 export default WaterDeliveryPage;
