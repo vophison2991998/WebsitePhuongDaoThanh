@@ -1,280 +1,326 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
     FaTruckMoving, FaPlus, FaShoppingCart, FaSearch, 
-    FaClock, FaQrcode, FaPrint, FaTimes, FaTrashAlt 
+    FaQrcode, FaPrint, FaTimes, FaTrashAlt, FaUndo, FaHistory 
 } from 'react-icons/fa';
 import { QRCodeSVG as QrCodeGenerator } from 'qrcode.react';
+import { waterDeliveryApi } from './waterDeliveryApi';
 
-// --- Types & Interfaces ---
+// --- Định nghĩa Kiểu dữ liệu (Interfaces) ---
 export interface DeliveryItem {
-    id: string;
-    recipient: string;
+    id: string; 
+    recipient: string; 
     dept: string;
-    waterType: string;
-    quantity: number;
+    waterType: string; 
+    quantity: number; 
     status: string; 
     date: string;
-    content?: string;
 }
 
-export interface WaterDeliveryLogicProps {
-    formData: {
-        quantity: string;
-        waterType: string;
-        recipientName: string;
-        department: string;
-        deliveryTime: string;
-        content: string;
+export interface TrashItem {
+    id: string; 
+    recipient: string; 
+    waterType: string;
+    quantity: number; 
+    deletedAt: string; 
+    daysLeft: number;
+}
+
+export default function WaterDeliveryPage() {
+    // --- 1. Quản lý State ---
+    const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
+    const [trashDeliveries, setTrashDeliveries] = useState<TrashItem[]>([]);
+    const [waterTypes, setWaterTypes] = useState<{id: any, name: string}[]>([]);
+    const [departments, setDepartments] = useState<{id: any, name: string}[]>([]);
+    
+    const [isLoading, setIsLoading] = useState(false);
+    const [isTrashOpen, setIsTrashOpen] = useState(false);
+    const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [selectedOrder, setSelectedOrder] = useState<DeliveryItem | null>(null);
+
+    const initialFormState = {
+        quantity: '',
+        waterType: '',
+        recipientName: '',
+        department: '',
+        deliveryTime: new Date().toISOString().slice(0, 16),
+        content: ''
     };
-    isLoading: boolean;
-    message: { text: string; type: 'success' | 'error' } | null;
-    deliveries: DeliveryItem[];
-    selectedOrder: DeliveryItem | null;
-    searchTerm: string;
-    handleChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
-    handleSubmit: (e: React.FormEvent) => void;
-    handleUpdateStatus: (id: string, currentStatus: string) => void;
-    handleDelete: (id: string) => void;
-    setSearchTerm: (value: string) => void;
-    setSelectedOrder: (order: DeliveryItem | null) => void;
-    getStatusColor: (status: string) => string;
-    waterTypes: { id: number | string; name: string }[];
-    departments: { id: number | string; name: string }[];
-}
+    const [formData, setFormData] = useState(initialFormState);
 
-// --- Component QRCode ---
-const QRCode: React.FC<{ value: string; size: number }> = ({ value, size }) => (
-    <div className="p-1 bg-white flex items-center justify-center mx-auto border border-gray-100 shadow-inner">
-        <QrCodeGenerator 
-            value={value} 
-            size={size} 
-            level="H" 
-            fgColor="#000000"
-            bgColor="#ffffff"
-        />
-    </div>
-);
+    // --- 2. Logic Lấy dữ liệu (Fetch Data) ---
+    const fetchData = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const [typesRes, deptsRes, deliveriesRes] = await waterDeliveryApi.getInitialData();
+            setWaterTypes(typesRes.data?.data ?? []);
+            setDepartments(deptsRes.data?.data ?? []);
+            
+            const rawData = deliveriesRes.data?.data ?? [];
+            
+            // Lọc đơn bình thường (status_id !== 0)
+            const active = rawData.filter((d: any) => d.status_id !== 0 && d.status_id !== null).map((d: any) => ({
+                id: d.delivery_id ?? "N/A",
+                recipient: d.recipient_name ?? "Chưa có tên",
+                dept: d.department_name ?? `Bộ phận ${d.dept_id ?? ""}`,
+                waterType: d.product_name ?? `Sản phẩm ${d.product_id ?? ""}`,
+                quantity: Number(d.quantity ?? 0),
+                status: (d.status ?? "XỬ LÝ").toUpperCase(),
+                date: d.delivery_time ?? "",
+            }));
 
-// --- Component Modal ---
-interface DeliveryQrModalProps {
-    order: DeliveryItem | null;
-    onClose: () => void;
-}
+            // Lọc đơn trong thùng rác (status_id === 0)
+            const trash = rawData.filter((d: any) => String(d.status_id) === "0").map((d: any) => ({
+                id: d.delivery_id ?? "N/A",
+                recipient: d.recipient_name ?? "N/A",
+                waterType: d.product_name ?? "Nước",
+                quantity: Number(d.quantity ?? 0),
+                deletedAt: d.updated_at ? new Date(d.updated_at).toLocaleDateString('vi-VN') : new Date().toLocaleDateString('vi-VN'),
+                daysLeft: 30
+            }));
+            
+            setDeliveries(active);
+            setTrashDeliveries(trash);
+        } catch (error) {
+            setMessage({ text: "Lỗi đồng bộ dữ liệu với máy chủ.", type: 'error' });
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
 
-const DeliveryQrModal: React.FC<DeliveryQrModalProps> = ({ order, onClose }) => {
-    if (!order) return null;
+    useEffect(() => { fetchData(); }, [fetchData]);
 
-    const qrValue: string = JSON.stringify({
-        id: order.id,
-        recipient: order.recipient,
-        dept: order.dept,
-        quantity: order.quantity,
-        waterType: order.waterType,
-        status: order.status
-    });
+    // --- 3. Xử lý Sự kiện (Handlers) ---
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value ?? "" }));
+    };
 
-    const handlePrint = () => {
-        const printContent = document.getElementById('qr-print-area')?.innerHTML;
-        if (printContent) {
-            const printWindow = window.open('', '', 'height=600,width=800');
-            if (printWindow) {
-                printWindow.document.write('<html><head><title>In Phiếu Giao Hàng</title>');
-                printWindow.document.write('<style>body{font-family: Arial, sans-serif; padding: 20px;} .qr-data { margin-top: 20px; text-align: center; } .qr-code-box { display: inline-block; padding: 10px; border: 1px solid #ccc; } button { display: none; } .w-full { width: 100%; }</style>');
-                printWindow.document.write('</head><body>');
-                printWindow.document.write(printContent);
-                printWindow.document.write('</body></html>');
-                printWindow.document.close();
-                printWindow.focus();
-                setTimeout(() => { 
-                    printWindow.print();
-                    printWindow.close();
-                }, 250);
-            }
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+        try {
+            await waterDeliveryApi.createDelivery({ ...formData, delivery_id: "" });
+            setMessage({ text: "Tạo đơn thành công!", type: 'success' });
+            setFormData(initialFormState);
+            fetchData();
+        } catch (error) {
+            setMessage({ text: "Lỗi hệ thống khi tạo đơn.", type: 'error' });
+        } finally {
+            setIsLoading(false);
         }
     };
 
+    const handleUpdateStatus = async (id: string, currentStatus: string) => {
+        const nextStatus = currentStatus.includes('HOÀN THÀNH') ? 1 : 2;
+        try {
+            await waterDeliveryApi.updateStatus(id, nextStatus);
+            fetchData();
+        } catch (error) {
+            setMessage({ text: "Không thể cập nhật trạng thái.", type: 'error' });
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("Chuyển đơn hàng này vào thùng rác?")) return;
+        try {
+            await waterDeliveryApi.deleteDelivery(id);
+            fetchData();
+            setMessage({ text: "Đã chuyển vào thùng rác.", type: 'success' });
+        } catch (error) {
+            setMessage({ text: "Lỗi khi xóa.", type: 'error' });
+        }
+    };
+
+    const handleRestore = async (id: string) => {
+        try {
+            await waterDeliveryApi.updateStatus(id, 1);
+            fetchData();
+            setMessage({ text: "Khôi phục thành công!", type: 'success' });
+        } catch (error) {
+            setMessage({ text: "Lỗi khi khôi phục.", type: 'error' });
+        }
+    };
+
+    const filteredDeliveries = useMemo(() => {
+        return deliveries.filter(d => 
+            d.recipient.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            d.id.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [deliveries, searchTerm]);
+
+    const getStatusColor = (status: string) => {
+        if (status.includes('HOÀN THÀNH')) return "bg-green-100 text-green-700 border-green-200";
+        return "bg-yellow-100 text-yellow-700 border-yellow-200";
+    };
+
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-6 rounded-lg shadow-2xl w-full max-w-md relative">
-                <div id="qr-print-area" className="flex flex-col items-center">
-                    <h3 className="text-xl font-bold text-center mb-4 border-b pb-2 w-full text-gray-900">Mã QR Đơn Hàng: {order.id}</h3>
-                    <div className="text-center mb-4 qr-data">
-                        <div className="qr-code-box">
-                            <QRCode value={qrValue} size={200} /> 
-                        </div>
-                    </div>
-                    <div className="w-full text-left mt-2 p-3 bg-gray-50 rounded border border-gray-200">
-                        <p className="text-sm text-gray-700 mb-1 font-semibold">Loại nước: <span className="font-normal text-indigo-700">{order.waterType}</span></p>
-                        <p className="text-sm text-gray-700 mb-1 font-semibold">Số lượng: <span className="font-normal">{order.quantity} bình</span></p>
-                        <p className="text-sm text-gray-700 font-semibold">Người nhận: <span className="font-normal">{order.recipient} ({order.dept})</span></p>
-                        <p className="text-sm text-gray-700 mt-2 italic font-medium">Trạng thái: <span className="text-red-600">{order.status}</span></p>
-                    </div>
-                </div>
-                <button onClick={onClose} className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 p-1 rounded-full hover:bg-gray-100"><FaTimes size={20} /></button>
-                <button onClick={handlePrint} className="w-full py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition flex items-center justify-center mt-4 shadow-lg">
-                    <FaPrint className="mr-2" /> In Phiếu Giao
+        <div className="p-6 bg-gray-50 min-h-screen font-sans text-gray-900">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+                    <FaTruckMoving className="text-red-600" /> Quản lý Xuất Kho Nước
+                </h1>
+                <button 
+                    onClick={() => setIsTrashOpen(true)} 
+                    className="relative flex items-center gap-2 bg-white border p-2 px-4 rounded-lg shadow-sm hover:bg-gray-100 transition-colors"
+                >
+                    <FaTrashAlt className="text-gray-400" />
+                    <span className="text-sm font-medium">Thùng rác</span>
+                    {trashDeliveries.length > 0 && (
+                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full animate-pulse">
+                            {trashDeliveries.length}
+                        </span>
+                    )}
                 </button>
             </div>
-        </div>
-    );
-};
 
-// --- Component UI Chính ---
-const WaterDeliveryPageUI: React.FC<WaterDeliveryLogicProps> = ({
-    formData, isLoading, message, deliveries, selectedOrder, searchTerm,
-    handleChange, handleSubmit, handleUpdateStatus, handleDelete, setSearchTerm, setSelectedOrder, getStatusColor,
-    waterTypes, departments,
-}) => {
-    return (
-        <div className="p-6 bg-gray-50 min-h-screen">
-            <h1 className="text-3xl font-bold text-gray-800 flex items-center mb-6">
-                <FaTruckMoving className="mr-3 text-red-600" /> Quản lý Xuất Kho Nước (Delivery)
-            </h1>
-            
-            {/* Form Tạo Mới */}
-            <div className="bg-white p-6 rounded-lg shadow-xl mb-8 border border-red-200">
-                <h2 className="text-xl font-semibold mb-4 border-b pb-2 text-red-600 flex items-center">
-                    <FaPlus className="mr-2 text-red-500" /> Tạo Đơn Hàng Xuất Mới
+            {/* Form Section */}
+            <div className="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-red-500">
+                <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-700">
+                    <FaPlus className="text-red-500" /> Tạo Đơn Hàng Mới
                 </h2>
-                
                 {message && (
-                    <div className={`p-3 mb-4 rounded-md shadow-sm animate-in fade-in duration-300 ${message.type === 'success' ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-red-100 text-red-700 border border-red-300'}`}>
-                        {message.text}
+                    <div className={`p-3 mb-4 rounded-md border text-sm flex justify-between items-center animate-in fade-in slide-in-from-top-1 ${message.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                        <span>{message.text}</span>
+                        <button onClick={() => setMessage(null)}><FaTimes /></button>
                     </div>
                 )}
-
-                <form onSubmit={handleSubmit}>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Mã Đơn Hàng</label>
-                            <input type="text" value="Tự động tạo (ORD-...)" disabled className="mt-1 block w-full border border-gray-300 rounded-md p-2 bg-gray-100 text-gray-500 italic cursor-not-allowed" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Số Lượng (Bình) *</label>
-                            <input type="number" name="quantity" min="1" value={formData.quantity} onChange={handleChange} className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:ring-red-500 focus:border-red-500" required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Loại Nước *</label>
-                            <select name="waterType" value={formData.waterType} onChange={handleChange} className="mt-1 block w-full border border-gray-300 rounded-md p-2 bg-white focus:ring-red-500 focus:border-red-500" required>
-                                <option value="" disabled>Chọn loại nước</option>
-                                {waterTypes.map(type => (
-                                    <option key={type.id} value={type.id}>{type.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Người Nhận *</label>
-                            <input type="text" name="recipientName" value={formData.recipientName} onChange={handleChange} placeholder="Tên khách hàng/người nhận" className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:ring-red-500 focus:border-red-500" required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Phòng Ban *</label>
-                            <select name="department" value={formData.department} onChange={handleChange} className="mt-1 block w-full border border-gray-300 rounded-md p-2 bg-white focus:ring-red-500 focus:border-red-500" required>
-                                <option value="" disabled>Chọn phòng ban</option>
-                                {departments.map(dept => (
-                                    <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Thời Gian Dự Kiến</label>
-                            <div className="relative">
-                                <input type="datetime-local" name="deliveryTime" value={formData.deliveryTime} onChange={handleChange} className="mt-1 block w-full border border-gray-300 rounded-md p-2 pr-10 focus:ring-red-500 focus:border-red-500" />
-                                <FaClock className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                            </div>
-                        </div>
-                        <div className="md:col-span-3">
-                            <label className="block text-sm font-medium text-gray-700">Ghi chú giao hàng</label>
-                            <textarea rows={2} name="content" value={formData.content} onChange={handleChange} placeholder="Ví dụ: Giao lên lầu 2, gọi trước khi đến..." className="mt-1 block w-full border border-gray-300 rounded-md p-2 focus:ring-red-500 focus:border-red-500" />
-                        </div>
-                    </div>
-                    <button type="submit" disabled={isLoading} className={`mt-6 px-6 py-3 text-white font-semibold rounded-lg flex items-center justify-center transition-all shadow-lg ${isLoading ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 hover:shadow-xl'}`}>
-                        <FaShoppingCart className={`mr-2 ${isLoading ? 'animate-spin' : ''}`} /> {isLoading ? 'Đang Lưu Đơn...' : 'Xác Nhận Xuất Kho'}
+                <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="text" name="recipientName" placeholder="Người nhận *" value={formData.recipientName} onChange={handleChange} className="border p-2 rounded-md outline-none focus:ring-2 focus:ring-red-200" required />
+                    <select name="waterType" value={formData.waterType} onChange={handleChange} className="border p-2 rounded-md outline-none" required>
+                        <option value="">Chọn loại nước *</option>
+                        {waterTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    <input type="number" name="quantity" placeholder="Số lượng *" value={formData.quantity} onChange={handleChange} className="border p-2 rounded-md outline-none" required />
+                    <select name="department" value={formData.department} onChange={handleChange} className="border p-2 rounded-md outline-none" required>
+                        <option value="">Chọn phòng ban *</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                    <input type="datetime-local" name="deliveryTime" value={formData.deliveryTime} onChange={handleChange} className="border p-2 rounded-md outline-none text-gray-600" />
+                    <button type="submit" disabled={isLoading} className="bg-red-600 text-white font-bold rounded-md hover:bg-red-700 flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 disabled:opacity-50">
+                        <FaShoppingCart /> {isLoading ? 'Đang lưu...' : 'Xác Nhận Xuất Kho'}
                     </button>
                 </form>
             </div>
 
-            {/* Danh sách đơn hàng */}
-            <div className="bg-white p-6 rounded-lg shadow-xl border border-indigo-200">
-                <div className="flex justify-between items-center mb-4 flex-col sm:flex-row gap-3">
-                    <h2 className="text-xl font-bold text-indigo-800">Lịch Sử Giao Nhận</h2>
-                    <div className="relative w-full sm:w-1/3 min-w-[250px]">
-                        <input type="text" placeholder="Tìm tên khách, mã đơn..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 pl-10 focus:ring-indigo-500 focus:border-indigo-500" />
+            {/* List Section */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-200">
+                <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center bg-gray-50 gap-4">
+                    <h2 className="font-bold text-gray-700 flex items-center gap-2"><FaHistory className="text-gray-400"/> Lịch Sử Giao Nhận</h2>
+                    <div className="relative w-full md:w-64">
                         <FaSearch className="absolute left-3 top-3 text-gray-400" />
+                        <input 
+                            type="text" 
+                            placeholder="Tìm kiếm mã, tên..." 
+                            value={searchTerm} 
+                            onChange={(e) => setSearchTerm(e.target.value)} 
+                            className="w-full pl-9 pr-3 py-2 border rounded-full text-sm outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all" 
+                        />
                     </div>
                 </div>
-                
-                <div className="overflow-x-auto rounded-lg border border-gray-100">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-100 text-gray-600 text-[11px] uppercase font-bold tracking-wider">
                             <tr>
-                                <th className="px-4 py-3">Mã Đơn</th>
-                                <th className="px-4 py-3">Người Nhận</th>
-                                <th className="px-4 py-3">Phòng Ban</th>
-                                <th className="px-4 py-3">Sản phẩm</th>
-                                <th className="px-4 py-3 text-center">SL</th>
-                                <th className="px-4 py-3">Trạng Thái</th>
-                                <th className="px-4 py-3">Thời gian</th>
-                                <th className="px-4 py-3 text-center">Thao tác</th>
+                                <th className="p-4">Mã Đơn</th>
+                                <th className="p-4">Người Nhận / Bộ phận</th>
+                                <th className="p-4 text-center">SL</th>
+                                <th className="p-4">Trạng Thái</th>
+                                <th className="p-4 text-center">Thao tác</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200 bg-white">
-                            {deliveries.map((item) => (
-                                <tr key={item.id} className="hover:bg-indigo-50 transition-colors group">
-                                    <td className="px-4 py-3 text-sm font-bold text-indigo-600">{item.id}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-900 font-medium">{item.recipient}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-600">{item.dept}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-600">{item.waterType}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-900 font-semibold text-center">{item.quantity}</td>
-                                    <td className="px-4 py-3">
-                                        <button
-                                            onClick={() => handleUpdateStatus(item.id, item.status)}
-                                            className={`text-[10px] uppercase tracking-wider font-bold px-3 py-1.5 rounded-full border shadow-sm cursor-pointer focus:outline-none transition-all hover:scale-105 active:scale-95 ${getStatusColor(item.status)}`}
+                        <tbody className="divide-y divide-gray-100">
+                            {filteredDeliveries.map((item) => (
+                                <tr key={item.id} className="hover:bg-blue-50/50 transition-colors group">
+                                    <td className="p-4 font-bold text-indigo-600 text-sm">{item.id}</td>
+                                    <td className="p-4">
+                                        <div className="text-sm font-medium text-gray-800">{item.recipient}</div>
+                                        <div className="text-xs text-gray-500">{item.dept}</div>
+                                    </td>
+                                    <td className="p-4 text-center font-bold text-gray-700">{item.quantity}</td>
+                                    <td className="p-4">
+                                        <button 
+                                            onClick={() => handleUpdateStatus(item.id, item.status)} 
+                                            className={`px-3 py-1 rounded-full text-[10px] font-bold border shadow-sm transition-all hover:brightness-95 ${getStatusColor(item.status)}`}
                                         >
                                             {item.status}
                                         </button>
                                     </td>
-                                    <td className="px-4 py-3 text-xs text-gray-500 font-medium">{item.date}</td>
-                                    <td className="px-4 py-3 text-center flex justify-center gap-2">
-                                        <button 
-                                            onClick={() => setSelectedOrder(item)} 
-                                            className="p-2 rounded-full text-indigo-600 hover:text-white hover:bg-indigo-600 border border-indigo-200 shadow-sm transition-all bg-white" 
-                                            title="Xem mã QR"
-                                        >
-                                            <FaQrcode size={14} />
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDelete(item.id)} 
-                                            className="p-2 rounded-full text-red-600 hover:text-white hover:bg-red-600 border border-red-200 shadow-sm transition-all bg-white" 
-                                            title="Xóa đơn hàng"
-                                        >
-                                            <FaTrashAlt size={14} />
-                                        </button>
+                                    <td className="p-4">
+                                        <div className="flex justify-center gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => setSelectedOrder(item)} title="Xem QR" className="p-2 text-indigo-600 border rounded-full hover:bg-indigo-600 hover:text-white transition-all"><FaQrcode /></button>
+                                            <button onClick={() => handleDelete(item.id)} title="Xóa" className="p-2 text-red-600 border rounded-full hover:bg-red-600 hover:text-white transition-all"><FaTrashAlt /></button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                    
-                    {deliveries.length === 0 && !isLoading && (
-                        <div className="text-center py-12 text-gray-400 italic bg-gray-50">
-                            Không tìm thấy dữ liệu đơn hàng nào phù hợp...
-                        </div>
-                    )}
-
-                    {isLoading && deliveries.length === 0 && (
-                        <div className="text-center py-12 text-indigo-500 font-medium">
-                            Đang tải dữ liệu từ máy chủ...
-                        </div>
-                    )}
                 </div>
             </div>
-            
-            {/* Modal hiển thị QR */}
-            <DeliveryQrModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+
+            {/* Trash Modal */}
+            {isTrashOpen && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in duration-200">
+                        <div className="bg-gray-800 p-4 text-white flex justify-between items-center">
+                            <h3 className="font-bold flex items-center gap-2"><FaHistory /> Thùng rác tạm thời</h3>
+                            <button onClick={() => setIsTrashOpen(false)}><FaTimes size={20} /></button>
+                        </div>
+                        <div className="p-4 max-h-[60vh] overflow-y-auto">
+                            {trashDeliveries.length === 0 ? (
+                                <div className="text-center py-12 text-gray-400 italic">Thùng rác trống</div>
+                            ) : (
+                                <table className="w-full text-sm text-left">
+                                    <tbody className="divide-y divide-gray-100">
+                                        {trashDeliveries.map(item => (
+                                            <tr key={item.id} className="hover:bg-gray-50">
+                                                <td className="py-3">
+                                                    <div className="font-bold text-gray-700">{item.id}</div>
+                                                    <div className="text-xs text-gray-500">{item.recipient} • {item.quantity} thùng</div>
+                                                </td>
+                                                <td className="py-3">
+                                                    <span className="text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded text-[11px]">{item.daysLeft} ngày nữa</span>
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                    <button onClick={() => handleRestore(item.id)} className="text-green-600 border border-green-200 px-3 py-1 rounded-md hover:bg-green-600 hover:text-white transition-all inline-flex items-center gap-1 text-xs font-bold shadow-sm"><FaUndo size={10}/> Khôi phục</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                        <div className="p-4 bg-gray-50 border-t flex justify-end">
+                            <button onClick={() => setIsTrashOpen(false)} className="px-4 py-1.5 bg-gray-200 rounded text-sm font-bold hover:bg-gray-300">Đóng</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* QR/Print Modal */}
+            {selectedOrder && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] backdrop-blur-sm p-4">
+                    <div className="bg-white p-6 rounded-2xl text-center max-w-xs w-full shadow-2xl relative animate-in zoom-in duration-150">
+                        <button onClick={() => setSelectedOrder(null)} className="absolute top-3 right-3 text-gray-400"><FaTimes size={18} /></button>
+                        <h3 className="font-bold mb-4 border-b pb-2 text-gray-700">Mã QR Đơn hàng</h3>
+                        <div className="bg-white p-3 border-2 border-dashed border-gray-100 inline-block mb-4 rounded-xl">
+                            <QrCodeGenerator value={selectedOrder.id} size={180} />
+                        </div>
+                        <div className="mb-6">
+                            <p className="text-sm font-black text-indigo-600">{selectedOrder.id}</p>
+                            <p className="text-xs text-gray-500 mt-1">{selectedOrder.recipient}</p>
+                        </div>
+                        <button onClick={() => window.print()} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
+                            <FaPrint /> In Phiếu Xuất Kho
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
-};
-
-export default WaterDeliveryPageUI;
+}
