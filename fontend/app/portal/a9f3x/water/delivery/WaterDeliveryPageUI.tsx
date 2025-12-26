@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
     FaTruckMoving, FaPlus, FaShoppingCart, FaSearch, 
     FaQrcode, FaPrint, FaTimes, FaTrashAlt, FaUndo, FaHistory,
     FaBuilding, FaUser, FaCheckCircle, FaClock, FaExclamationTriangle, FaSkull
 } from 'react-icons/fa';
 import { QRCodeSVG as QrCodeGenerator } from 'qrcode.react';
+import { useReactToPrint } from 'react-to-print'; // Thư viện in chuyên nghiệp
 import { waterDeliveryApi } from './waterDeliveryApi';
 
 // --- Interfaces ---
@@ -31,7 +32,7 @@ export interface TrashItem {
 }
 
 export default function WaterDeliveryPage() {
-    // --- 1. States ---
+    // --- 1. States & Refs ---
     const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
     const [trashDeliveries, setTrashDeliveries] = useState<TrashItem[]>([]);
     const [waterTypes, setWaterTypes] = useState<{id: any, name: string}[]>([]);
@@ -42,6 +43,9 @@ export default function WaterDeliveryPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedOrder, setSelectedOrder] = useState<DeliveryItem | null>(null);
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+    // Ref để trỏ tới vùng cần in
+    const printRef = useRef<HTMLDivElement>(null);
 
     const [confirmDialog, setConfirmDialog] = useState({
         isOpen: false,
@@ -60,7 +64,13 @@ export default function WaterDeliveryPage() {
         content: ''
     });
 
-    // --- 2. Helpers ---
+    // --- 2. Print Logic (Sử dụng react-to-print) ---
+    const handlePrint = useReactToPrint({
+        contentRef: printRef,
+        documentTitle: `Phieu_Xuat_Kho_${selectedOrder?.id || 'moi'}`,
+    });
+
+    // --- 3. Helpers & Data Fetching ---
     const showNotify = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
         setMessage({ text, type });
         setTimeout(() => setMessage(null), 3000);
@@ -71,7 +81,6 @@ export default function WaterDeliveryPage() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    // --- 3. Data Fetching ---
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -193,21 +202,12 @@ export default function WaterDeliveryPage() {
     return (
         <div className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-900 font-sans selection:bg-red-100">
             
-            {/* CSS CHO VIỆC IN ẤN */}
+            {/* CSS Print Styles */}
             <style jsx global>{`
                 @media print {
-                    body * { visibility: hidden; }
-                    #printable-area, #printable-area * { visibility: visible; }
-                    #printable-area {
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
-                        margin: 0;
-                        padding: 20px;
-                        background: white !important;
-                    }
+                    body { background: white !important; }
                     .no-print { display: none !important; }
+                    @page { margin: 10mm; size: auto; }
                 }
             `}</style>
 
@@ -239,11 +239,11 @@ export default function WaterDeliveryPage() {
             )}
 
             {/* --- HEADER --- */}
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+            <div className="max-w-[1640px] mx-auto flex flex-col md:flex-row justify-between items-center mb-10 gap-6 no-print">
                 <div>
                     <h1 className="text-4xl font-black text-slate-800 flex items-center gap-4 italic uppercase tracking-tighter">
                         <div className="bg-red-600 p-3 rounded-2xl text-white shadow-xl shadow-red-200 rotate-3 border-2 border-white"><FaTruckMoving size={32} /></div>
-                        Water Flow <span className="text-red-600">Pro</span>
+                        <span className="text-red-600">Xuất Kho Nước Uống </span>
                     </h1>
                     <p className="text-slate-400 font-bold ml-2 mt-1 flex items-center gap-2">
                         <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
@@ -262,7 +262,7 @@ export default function WaterDeliveryPage() {
                 </button>
             </div>
 
-            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="max-w-[1640px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 no-print">
                 {/* --- FORM SECTION --- */}
                 <div className="lg:col-span-4">
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border-4 border-double border-slate-100 sticky top-8">
@@ -334,22 +334,22 @@ export default function WaterDeliveryPage() {
                                         <th className="p-6">Thao tác</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y-2 divide-dotted divide-slate-100">
+                                <tbody className="divide-y-2 divide-dotted divide-slate-200">
                                     {filteredDeliveries.map((item) => (
                                         <tr key={item.id} className="hover:bg-slate-50/80 transition-all group">
-                                            <td className="p-6">
-                                                <span className="font-black text-blue-600 text-xs bg-blue-50 px-3 py-1 rounded-full border-2 border-dotted border-blue-200">#{item.id}</span>
+                                            <td className="p-10">
+                                                <span className="font-black text-blue-600 text-xs bg-blue-50 px-3 py-1 rounded-full border-2 border-dotted border-blue-200">{item.id}</span>
                                                 <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold mt-2 uppercase"><FaClock /> {new Date(item.date).toLocaleDateString('vi-VN')}</div>
                                             </td>
-                                            <td className="p-6">
+                                            <td className="p-10">
                                                 <div className="font-black text-slate-800 text-base">{item.recipient}</div>
                                                 <div className="text-[10px] text-slate-400 font-black uppercase flex items-center gap-1 mt-1"><FaBuilding size={10}/> {item.dept}</div>
                                             </td>
-                                            <td className="p-6 text-center">
+                                            <td className="p-10 text-center">
                                                 <div className="text-xl font-black text-slate-900 leading-none">{item.quantity}</div>
                                                 <div className="text-[9px] font-black text-slate-400 uppercase mt-1 tracking-wider">{item.waterType}</div>
                                             </td>
-                                            <td className="p-6">
+                                            <td className="p-10">
                                                 <div className="flex items-center gap-2">
                                                     <button onClick={() => handleUpdateStatus(item.id, item.status)} className={`px-4 py-2 rounded-xl text-[10px] font-black border-2 border-dotted transition-all flex items-center gap-2 ${item.status.includes('HOÀN THÀNH') ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-500 hover:text-white'}`}>
                                                         {item.status.includes('HOÀN THÀNH') ? <FaCheckCircle /> : <FaClock />} {item.status}
@@ -362,109 +362,72 @@ export default function WaterDeliveryPage() {
                                     ))}
                                 </tbody>
                             </table>
-                            {filteredDeliveries.length === 0 && (
-                                <div className="text-center py-20 text-slate-300 font-bold italic uppercase tracking-widest text-xs">Không có dữ liệu phù hợp</div>
-                            )}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* --- TRASH MODAL --- */}
+            {/* --- TRASH MODAL (Giữ nguyên) --- */}
             {isTrashOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[900] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full overflow-hidden animate-in zoom-in duration-300 border-4 border-double border-slate-200">
-                        <div className="bg-slate-900 p-6 md:p-8 text-white flex justify-between items-center relative overflow-hidden">
-                            <div className="relative z-10">
-                                <h3 className="text-2xl font-black italic flex items-center gap-3 uppercase tracking-tighter">
-                                    Thùng rác <FaTrashAlt className="text-red-500 animate-pulse" />
-                                </h3>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">
-                                    Tự động dọn dẹp sau 30 ngày lưu trữ
-                                </p>
-                            </div>
-                            <button onClick={() => setIsTrashOpen(false)} className="relative z-10 bg-white/10 p-3 rounded-full hover:bg-red-600 hover:rotate-90 transition-all duration-300 text-white">
-                                <FaTimes />
-                            </button>
+                        <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+                            <h3 className="text-2xl font-black italic flex items-center gap-3 uppercase tracking-tighter">Thùng rác <FaTrashAlt className="text-red-500" /></h3>
+                            <button onClick={() => setIsTrashOpen(false)} className="bg-white/10 p-3 rounded-full hover:bg-red-600 transition-all text-white"><FaTimes /></button>
                         </div>
-                        
-                        <div className="p-6 md:p-8 max-h-[60vh] overflow-y-auto bg-slate-50/50 space-y-4">
-                            {trashDeliveries.length === 0 ? (
-                                <div className="text-center py-20 bg-white rounded-[2rem] border-4 border-dotted border-slate-200">
-                                    <p className="text-slate-400 font-black italic uppercase tracking-widest text-sm">Thùng rác đang trống</p>
-                                </div>
-                            ) : (
-                                trashDeliveries.map(item => {
-                                    const percentLeft = (item.daysLeft / 30) * 100;
-                                    const statusColor = item.daysLeft > 15 ? 'bg-emerald-500' : item.daysLeft > 5 ? 'bg-amber-500' : 'bg-red-500';
-
-                                    return (
-                                        <div key={item.id} className="group relative bg-white rounded-3xl p-5 border-2 border-dotted border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300">
-                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                                <div className="flex items-start gap-4">
-                                                    <div className="bg-slate-900 text-white w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg group-hover:bg-red-600 transition-colors border-2 border-white">
-                                                        <FaUndo size={18} />
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md uppercase border border-slate-200">#{item.id}</span>
-                                                            <span className="text-[10px] font-bold text-slate-400 italic">Xóa: {new Date(item.deletedAt).toLocaleDateString('vi-VN')}</span>
-                                                        </div>
-                                                        <h4 className="font-black text-slate-800 text-lg leading-none mb-1 group-hover:text-red-600 transition-colors">{item.recipient}</h4>
-                                                        <p className="text-sm font-bold text-slate-500 flex items-center gap-2">
-                                                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
-                                                            {item.quantity} {item.waterType}
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex items-center gap-2 self-end md:self-center">
-                                                    <button onClick={() => handleRestore(item.id)} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-xl font-black text-[10px] uppercase border-2 border-dotted border-emerald-200 hover:bg-emerald-600 hover:text-white transition-all">
-                                                        <FaUndo /> Khôi phục
-                                                    </button>
-                                                    <button onClick={() => handlePermanentDelete(item.id)} className="p-3 bg-red-50 text-red-500 rounded-xl border-2 border-dotted border-red-200 hover:bg-red-600 hover:text-white transition-all">
-                                                        <FaSkull size={16} />
-                                                    </button>
-                                                </div>
-                                            </div>
+                        <div className="p-8 max-h-[60vh] overflow-y-auto bg-slate-50/50 space-y-4">
+                            {trashDeliveries.length === 0 ? <p className="text-center py-10 text-slate-400 font-black italic uppercase">Trống</p> : 
+                                trashDeliveries.map(item => (
+                                    <div key={item.id} className="bg-white rounded-3xl p-5 border-2 border-dotted border-slate-200 flex justify-between items-center">
+                                        <div>
+                                            <h4 className="font-black text-slate-800">#{item.id} - {item.recipient}</h4>
+                                            <p className="text-sm font-bold text-slate-400">{item.quantity} {item.waterType}</p>
                                         </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                        <div className="p-6 bg-white border-t-2 border-dotted border-slate-100 flex justify-end">
-                            <button onClick={() => setIsTrashOpen(false)} className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase hover:bg-red-600 transition-all shadow-xl">Đóng</button>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleRestore(item.id)} className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-black text-[10px] uppercase border-2 border-dotted border-emerald-200 hover:bg-emerald-600 hover:text-white transition-all">Khôi phục</button>
+                                            <button onClick={() => handlePermanentDelete(item.id)} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-600 hover:text-white transition-all"><FaSkull size={16} /></button>
+                                        </div>
+                                    </div>
+                                ))
+                            }
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* --- QR PREVIEW & PRINT MODAL --- */}
+            {/* --- QR PREVIEW & PRINT MODAL (Sử dụng react-to-print) --- */}
             {selectedOrder && (
                 <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[1000] flex items-center justify-center p-4">
                     <div className="bg-white p-10 rounded-[3rem] text-center max-w-sm w-full shadow-2xl relative animate-in zoom-in border-4 border-double border-slate-200">
                         
-                        {/* Khu vực sẽ được in */}
-                        <div id="printable-area">
-                            <button onClick={() => setSelectedOrder(null)} className="no-print absolute top-8 right-8 text-slate-300 hover:text-slate-800 transition-colors"><FaTimes size={24}/></button>
+                        <button onClick={() => setSelectedOrder(null)} className="no-print absolute top-8 right-8 text-slate-300 hover:text-slate-800 transition-colors">
+                            <FaTimes size={24}/>
+                        </button>
+
+                        {/* VÙNG SẼ ĐƯỢC IN (Gắn Ref vào đây) */}
+                        <div ref={printRef} className="print:p-4 bg-white">
                             <h3 className="text-2xl font-black text-slate-800 italic uppercase mb-2">Phiếu xuất kho</h3>
                             <p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase mb-8">Xác thực E-Ticket</p>
                             
-                            <div className="bg-slate-50 p-8 rounded-[2.5rem] border-4 border-dotted border-slate-300 inline-block mb-8">
+                            <div className="bg-white p-6 rounded-[2.5rem] border-4 border-dotted border-slate-300 inline-block mb-8">
                                 <QrCodeGenerator value={`WATER-${selectedOrder.id}`} size={180} />
                             </div>
 
-                            <div className="text-left bg-slate-50 rounded-2xl p-6 mb-8 font-bold text-sm space-y-3 border-2 border-dotted border-slate-200">
+                            <div className="text-left bg-slate-50 rounded-2xl p-6 mb-8 font-bold text-sm space-y-3 border-2 border-dotted border-slate-200 w-full">
                                 <div className="flex justify-between border-b border-dotted border-slate-300 pb-2 italic"><span className="text-slate-400 text-[10px] uppercase tracking-widest">Mã đơn</span><span className="text-blue-600">#{selectedOrder.id}</span></div>
                                 <div className="flex justify-between border-b border-dotted border-slate-300 pb-2 italic"><span className="text-slate-400 text-[10px] uppercase tracking-widest">Người nhận</span><span>{selectedOrder.recipient}</span></div>
                                 <div className="flex justify-between border-b border-dotted border-slate-300 pb-2 italic"><span className="text-slate-400 text-[10px] uppercase tracking-widest">Bộ phận</span><span>{selectedOrder.dept}</span></div>
                                 <div className="flex justify-between italic"><span className="text-slate-400 text-[10px] uppercase tracking-widest">Chi tiết</span><span>{selectedOrder.quantity} {selectedOrder.waterType}</span></div>
                             </div>
                             
-                            <p className="hidden print:block text-[8px] text-slate-400 mt-4 uppercase font-bold italic">Ngày in: {new Date().toLocaleString('vi-VN')}</p>
+                            {/* Hiển thị ngày in chỉ khi in ra giấy */}
+                            <p className="hidden print:block text-[8px] text-slate-400 mt-4 uppercase font-bold italic text-center">
+                                NGÀY IN: {new Date().toLocaleString('vi-VN')}
+                            </p>
                         </div>
 
-                        <button onClick={() => window.print()} className="no-print w-full bg-slate-900 text-white py-5 rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-blue-600 transition-all uppercase tracking-widest shadow-xl border-2 border-slate-800">
+                        {/* Nút trigger hàm handlePrint từ thư viện */}
+                        <button onClick={() => handlePrint()} className="no-print w-full bg-slate-900 text-white py-5 rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-blue-600 transition-all uppercase tracking-widest shadow-xl border-2 border-slate-800">
                             <FaPrint /> In phiếu điện tử
                         </button>
                     </div>
