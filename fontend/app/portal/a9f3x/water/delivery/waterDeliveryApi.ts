@@ -1,5 +1,8 @@
 import api from '@/lib/api';
 
+/**
+ * ĐỊNH NGHĨA KIỂU DỮ LIỆU (TYPES)
+ */
 export interface DeliveryPayload {
     delivery_id?: string;
     recipientName: string;
@@ -20,20 +23,30 @@ export interface TrashItem {
     days_left: number;
 }
 
+/**
+ * API SERVICE QUẢN LÝ GIAO NƯỚC
+ */
 export const waterDeliveryApi = {
-    // Lấy dữ liệu ban đầu (Loại nước, Phòng ban, Danh sách đơn)
+    // 1. Lấy dữ liệu ban đầu cho trang Nhật ký
     getInitialData: async () => {
         const endpoints = [
-            api.get('/master/water-types'),
-            api.get('/departments'),
-            api.get('/deliveries')
+            api.get('/master/water-types'), // Danh mục loại nước
+            api.get('/departments'),       // Danh mục phòng ban
+            api.get('/deliveries')         // Danh sách đơn hàng hoạt động
         ];
+        
         const results = await Promise.allSettled(endpoints);
-        return results.map(res => res.status === 'fulfilled' ? res.value : { data: { data: [] } });
+        
+        // Trả về dữ liệu nếu thành công, ngược lại trả về mảng rỗng để tránh lỗi giao diện
+        return results.map(res => 
+            res.status === 'fulfilled' ? res.value : { data: { data: [] } }
+        );
     },
 
-    getTrashData: async () => api.get('/deliveries/trash'),
+    // 2. Lấy danh sách thùng rác (Đúng route: /trash/all)
+    getTrashData: async () => api.get('/deliveries/trash/all'),
 
+    // 3. Tạo đơn hàng mới (Map đúng trường Backend: recipient_name, dept_id, product_id, note)
     createDelivery: async (payload: DeliveryPayload) => {
         const dbPayload = {
             delivery_id: payload.delivery_id,
@@ -43,16 +56,28 @@ export const waterDeliveryApi = {
             quantity: Number(payload.quantity),
             delivery_time: payload.deliveryTime,
             note: payload.content,
-            status_id: 1 // 1: Đang xử lý
+            status_id: 1 // Mặc định: PROCESSING (Đang xử lý)
         };
         return api.post('/deliveries', dbPayload);
     },
 
-    updateStatus: async (id: string, statusId: number) => api.patch(`/deliveries/${id}/status`, { status_id: statusId }),
+    // 4. Cập nhật trạng thái nhanh (PATCH)
+    updateStatus: async (id: string, statusId: number) => 
+        api.patch(`/deliveries/${id}/status`, { status_id: statusId }),
 
-    restoreDelivery: async (id: string) => api.patch(`/deliveries/${id}/restore`),
+    // 5. Khôi phục từ thùng rác (Đúng route: /trash/:id/restore)
+    restoreDelivery: async (id: string) => 
+        api.post(`/deliveries/trash/${id}/restore`),
 
-    deleteDelivery: async (id: string) => api.delete(`/deliveries/${id}`),
+    // 6. Xóa tạm thời (Chuyển vào thùng rác)
+    deleteDelivery: async (id: string) => 
+        api.delete(`/deliveries/${id}`),
 
-    permanentlyDelete: async (id: string) => api.delete(`/deliveries/${id}/permanent`)
+    // 7. Xóa vĩnh viễn (Đúng route: /trash/:id/permanent)
+    permanentlyDelete: async (id: string) => 
+        api.delete(`/deliveries/trash/${id}/permanent`),
+
+    // 8. Dọn dẹp thùng rác thủ công (Dành cho Admin)
+    cleanTrash: async () => 
+        api.post('/deliveries/trash/cleanup')
 };

@@ -8,6 +8,7 @@ export const getDeliveries = async (req, res) => {
         const data = await DeliveryModel.getAll();
         res.status(200).json({ 
             success: true, 
+            count: data.length,
             data 
         });
     } catch (error) {
@@ -27,6 +28,7 @@ export const getTrashDeliveries = async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Lấy danh sách thùng rác thành công",
+            count: data.length,
             data
         });
     } catch (error) {
@@ -42,12 +44,12 @@ export const getTrashDeliveries = async (req, res) => {
  */
 export const createDelivery = async (req, res) => {
     try {
-        const deliveryData = {
-            ...req.body,
-            status_id: req.body.status_id || 1 // Mặc định 1 (PROCESSING)
-        };
-        
-        const data = await DeliveryModel.create(deliveryData);
+        // Validation cơ bản
+        if (!req.body.recipient_name || !req.body.quantity) {
+            return res.status(400).json({ success: false, message: "Vui lòng nhập tên người nhận và số lượng" });
+        }
+
+        const data = await DeliveryModel.create(req.body);
         res.status(201).json({ 
             success: true, 
             message: "Tạo đơn hàng thành công", 
@@ -62,7 +64,7 @@ export const createDelivery = async (req, res) => {
 };
 
 /**
- * 4. Cập nhật thông tin chi tiết (Chỉ đơn chưa xóa)
+ * 4. Cập nhật thông tin (Tận dụng Dynamic Update của Model)
  */
 export const updateDelivery = async (req, res) => {
     try {
@@ -70,40 +72,40 @@ export const updateDelivery = async (req, res) => {
         if (!data) {
             return res.status(404).json({ 
                 success: false, 
-                message: "Không tìm thấy đơn hàng hoặc đơn đã nằm trong thùng rác" 
+                message: "Không tìm thấy đơn hàng hoặc đơn đã bị xóa tạm thời" 
             });
         }
         res.status(200).json({ 
             success: true, 
-            message: "Cập nhật thành công", 
+            message: "Cập nhật đơn hàng thành công", 
             data 
         });
     } catch (error) {
         res.status(500).json({ 
             success: false, 
-            message: "Lỗi cập nhật đơn hàng: " + error.message 
+            message: "Lỗi cập nhật: " + error.message 
         });
     }
 };
 
 /**
- * 5. Cập nhật trạng thái (Dùng status_id)
+ * 5. Cập nhật trạng thái (Dùng chung hàm update của Model)
  */
 export const updateStatus = async (req, res) => {
     try {
         const { status_id } = req.body;
         if (!status_id) {
-            return res.status(400).json({ success: false, message: "Thiếu status_id" });
+            return res.status(400).json({ success: false, message: "Thiếu mã trạng thái (status_id)" });
         }
 
-        const data = await DeliveryModel.updateStatus(req.params.id, status_id);
+        const data = await DeliveryModel.update(req.params.id, { status_id });
         if (!data) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
+            return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng để cập nhật trạng thái" });
         }
 
         res.status(200).json({ 
             success: true, 
-            message: "Cập nhật trạng thái thành công", 
+            message: "Đã cập nhật trạng thái đơn hàng", 
             data 
         });
     } catch (error) {
@@ -120,12 +122,12 @@ export const restoreDelivery = async (req, res) => {
         if (!data) {
             return res.status(404).json({
                 success: false,
-                message: "Không tìm thấy đơn hàng trong thùng rác để khôi phục"
+                message: "Không tìm thấy đơn hàng trong thùng rác hoặc đã quá hạn 30 ngày"
             });
         }
         res.status(200).json({
             success: true,
-            message: "Khôi phục đơn hàng thành công",
+            message: "Đã khôi phục đơn hàng về danh sách hoạt động",
             data
         });
     } catch (error) {
@@ -134,17 +136,20 @@ export const restoreDelivery = async (req, res) => {
 };
 
 /**
- * 7. Xóa tạm thời (Soft Delete - Đưa vào thùng rác)
+ * 7. Xóa tạm thời (Soft Delete)
  */
 export const deleteDelivery = async (req, res) => {
     try {
-        const isDeleted = await DeliveryModel.delete(req.params.id);
-        if (!isDeleted) {
-            return res.status(404).json({ success: false, message: "Đơn hàng không tồn tại" });
+        const success = await DeliveryModel.delete(req.params.id);
+        if (!success) {
+            return res.status(404).json({ success: false, message: "Đơn hàng không tồn tại hoặc đã xóa" });
         }
-        res.status(200).json({ success: true, message: "Đã chuyển vào thùng rác (tự động xóa sau 30 ngày)" });
+        res.status(200).json({ 
+            success: true, 
+            message: "Đã chuyển vào thùng rác. Bạn có 30 ngày để khôi phục trước khi bị xóa vĩnh viễn." 
+        });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Lỗi xóa tạm thời: " + error.message });
+        res.status(500).json({ success: false, message: "Lỗi: " + error.message });
     }
 };
 
@@ -153,15 +158,30 @@ export const deleteDelivery = async (req, res) => {
  */
 export const permanentlyDeleteDelivery = async (req, res) => {
     try {
-        const isDeleted = await DeliveryModel.permanentlyDelete(req.params.id);
-        if (!isDeleted) {
+        const success = await DeliveryModel.permanentlyDelete(req.params.id);
+        if (!success) {
             return res.status(404).json({
                 success: false,
-                message: "Đơn hàng không tồn tại trong thùng rác để xóa vĩnh viễn"
+                message: "Đơn hàng không tồn tại trong thùng rác"
             });
         }
-        res.status(200).json({ success: true, message: "Đã xóa vĩnh viễn đơn hàng khỏi hệ thống" });
+        res.status(200).json({ success: true, message: "Đã xóa vĩnh viễn dữ liệu khỏi hệ thống" });
     } catch (error) {
         res.status(500).json({ success: false, message: "Lỗi xóa vĩnh viễn: " + error.message });
+    }
+};
+
+/**
+ * 9. Dọn dẹp thùng rác hệ thống
+ */
+export const cleanTrash = async (req, res) => {
+    try {
+        await DeliveryModel.autoCleanExpired();
+        res.status(200).json({
+            success: true,
+            message: "Hệ thống đã thực hiện dọn dẹp các mục quá hạn 30 ngày"
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Lỗi dọn dẹp: " + error.message });
     }
 };

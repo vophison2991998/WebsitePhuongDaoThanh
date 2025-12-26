@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { waterDeliveryApi } from './waterDeliveryApi';
 import { DeliveryItem, TrashItem } from './WaterDeliveryPageUI';
-import WaterDeliveryPageUI from './WaterDeliveryPageUI'; // Import UI component
+import WaterDeliveryPageUI from './WaterDeliveryPageUI';
 
 export const useWaterDeliveryLogic = () => {
     const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
@@ -15,7 +15,6 @@ export const useWaterDeliveryLogic = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedOrder, setSelectedOrder] = useState<DeliveryItem | null>(null);
 
-    // --- State cho ConfirmModal ---
     const [confirmConfig, setConfirmConfig] = useState<{
         isOpen: boolean;
         title: string;
@@ -43,40 +42,48 @@ export const useWaterDeliveryLogic = () => {
 
     const [formData, setFormData] = useState(initialFormState);
 
+    // --- FETCH DATA ---
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
+            // 1. Lấy dữ liệu khởi tạo (Types, Depts, Active Deliveries)
             const [typesRes, deptsRes, deliveriesRes] = await waterDeliveryApi.getInitialData();
+            
+            // 2. Lấy riêng danh sách thùng rác
+            const trashRes = await waterDeliveryApi.getTrashData();
+
             setWaterTypes(typesRes.data?.data ?? []);
             setDepartments(deptsRes.data?.data ?? []);
             
-            const rawData = deliveriesRes.data?.data ?? [];
-            const active = rawData.filter((d: any) => d.status_id !== 0 && d.status_id !== null).map((d: any) => ({
-                id: d.delivery_id ?? "N/A",
-                recipient: d.recipient_name ?? "Không rõ",
-                dept: d.department_name ?? `Bộ phận ${d.dept_id ?? ""}`,
-                waterType: d.product_name ?? `Sản phẩm ${d.product_id ?? ""}`,
-                quantity: Number(d.quantity ?? 0),
-                status: (d.status ?? "XỬ LÝ").toUpperCase(),
-                date: d.delivery_time ?? "",
+            // Map dữ liệu đơn hàng đang hoạt động
+            const active = (deliveriesRes.data?.data ?? []).map((d: any) => ({
+                id: d.delivery_id,
+                recipient: d.recipient_name,
+                dept: d.department_name,
+                waterType: d.product_name,
+                quantity: Number(d.quantity),
+                status: (d.status_name || "XỬ LÝ").toUpperCase(),
+                date: d.delivery_time,
             }));
 
-            const trash = rawData.filter((d: any) => d.status_id === 0).map((d: any) => ({
-                id: d.delivery_id ?? "N/A",
-                recipient: d.recipient_name ?? "N/A",
-                waterType: d.product_name ?? "Nước uống",
-                quantity: Number(d.quantity ?? 0),
-                deletedAt: d.updated_at ? new Date(d.updated_at).toLocaleDateString('vi-VN') : new Date().toLocaleDateString('vi-VN'),
-                daysLeft: 30 
+            // Map dữ liệu thùng rác (đúng các trường từ backend mới)
+            const trash = (trashRes.data?.data ?? []).map((d: any) => ({
+                id: d.delivery_id,
+                recipient: d.recipient_name,
+                waterType: d.product_name,
+                quantity: Number(d.quantity),
+                deletedAt: new Date(d.deleted_at).toLocaleDateString('vi-VN'),
+                daysLeft: d.days_left, // Lấy từ kết quả CEIL của SQL
+                expiresAt: d.expires_at
             }));
             
             setDeliveries(active);
             setTrashDeliveries(trash);
-        } catch (error) {
+        } catch (error: any) {
             setConfirmConfig({
                 isOpen: true,
-                title: "LỖI KẾT NỐI",
-                message: "Không thể tải dữ liệu từ máy chủ. Vui lòng thử lại.",
+                title: "LỖI HỆ THỐNG",
+                message: "Không thể kết nối đến máy chủ: " + error.message,
                 type: "danger",
                 onConfirm: closeConfirm
             });
@@ -87,22 +94,24 @@ export const useWaterDeliveryLogic = () => {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    // --- ACTIONS ---
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value ?? "" }));
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         try {
-            await waterDeliveryApi.createDelivery({ ...formData, delivery_id: "" });
+            await waterDeliveryApi.createDelivery({ ...formData });
             setFormData(initialFormState);
             await fetchData();
             setConfirmConfig({
                 isOpen: true,
                 title: "THÀNH CÔNG",
-                message: "Đơn hàng đã được tạo thành công.",
+                message: "Đơn hàng đã được ghi nhận.",
                 type: "info",
                 onConfirm: closeConfirm
             });
@@ -110,7 +119,7 @@ export const useWaterDeliveryLogic = () => {
             setConfirmConfig({
                 isOpen: true,
                 title: "THẤT BẠI",
-                message: "Có lỗi xảy ra khi tạo đơn hàng.",
+                message: "Không thể tạo đơn hàng. Vui lòng kiểm tra lại.",
                 type: "danger",
                 onConfirm: closeConfirm
             });
@@ -122,15 +131,15 @@ export const useWaterDeliveryLogic = () => {
     const handleDelete = (id: string) => {
         setConfirmConfig({
             isOpen: true,
-            title: "XÁC NHẬN XÓA",
-            message: "Bạn có chắc chắn muốn chuyển đơn hàng này vào thùng rác?",
+            title: "XÁC NHẬN XÓA TẠM THỜI",
+            message: "Đơn hàng sẽ được chuyển vào thùng rác và tự hủy sau 30 ngày.",
             type: "warning",
             onConfirm: async () => {
                 try {
                     await waterDeliveryApi.deleteDelivery(id);
                     await fetchData();
                 } catch (error) {
-                    console.error(error);
+                    console.error("Delete error:", error);
                 }
                 closeConfirm();
             }
@@ -139,18 +148,36 @@ export const useWaterDeliveryLogic = () => {
 
     const handleRestore = async (id: string) => {
         try {
-            await waterDeliveryApi.updateStatus(id, 1); 
+            await waterDeliveryApi.restoreDelivery(id); // Sử dụng API restore mới
             await fetchData();
             setConfirmConfig({
                 isOpen: true,
                 title: "KHÔI PHỤC",
-                message: "Đã khôi phục đơn hàng thành công.",
+                message: "Đơn hàng đã quay trở lại danh sách hoạt động.",
                 type: "info",
                 onConfirm: closeConfirm
             });
         } catch (error) {
-            console.error(error);
+            console.error("Restore error:", error);
         }
+    };
+
+    const handlePermanentlyDelete = (id: string) => {
+        setConfirmConfig({
+            isOpen: true,
+            title: "XÓA VĨNH VIỄN",
+            message: "Hành động này không thể hoàn tác. Bạn có chắc chắn muốn xóa?",
+            type: "danger",
+            onConfirm: async () => {
+                try {
+                    await waterDeliveryApi.permanentlyDelete(id);
+                    await fetchData();
+                } catch (error) {
+                    console.error("Hard delete error:", error);
+                }
+                closeConfirm();
+            }
+        });
     };
 
     const filteredDeliveries = useMemo(() => {
@@ -164,16 +191,14 @@ export const useWaterDeliveryLogic = () => {
         formData, isLoading, deliveries: filteredDeliveries, trashDeliveries,
         selectedOrder, searchTerm, waterTypes, departments, confirmConfig,
         setSearchTerm, setSelectedOrder, handleChange, handleSubmit, 
-        handleDelete, handleRestore, closeConfirm
+        handleDelete, handleRestore, handlePermanentlyDelete, closeConfirm
     };
 };
 
-// --- ĐÂY LÀ PHẦN QUAN TRỌNG: Component Wrapper ---
 const WaterDeliveryLogic = () => {
     const logicProps = useWaterDeliveryLogic();
-    
-    // Trả về UI và truyền toàn bộ logic vào qua props
-    return <WaterDeliveryPageUI  />;
+    // Đảm bảo truyền logicProps vào UI component
+    return <WaterDeliveryPageUI/>;
 };
 
 export default WaterDeliveryLogic;

@@ -1,7 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import helmet from "helmet"; // Thêm bảo mật header
+import helmet from "helmet";
+import cron from "node-cron";
 
 // IMPORT ROUTES
 import authRouter from "./routes/authRouter.js";
@@ -11,64 +12,61 @@ import masterRoutes from './routes/adminRoutes/masterRoutes.js';
 import departmentsRouter from './routes/adminRoutes/departmentsRouter.js';
 import deliveryRoutes from './routes/adminRoutes/deliveryRoutes.js'; 
 
+// IMPORT MODELS
+import DeliveryModel from './models/adminModels/deliveryModel.js';
+
 // IMPORT MIDDLEWARE
 import { protect, authorize } from "./middleware/authMiddleware.js";
 
 dotenv.config();
-const app = express();
+const app = express(); // Initialize APP first!
 
-// --- MIDDLEWARE HỆ THỐNG ---
-app.use(helmet()); // Bảo mật các HTTP headers
+// --- 1. MIDDLEWARE HỆ THỐNG ---
+app.use(helmet()); 
 app.use(cors({
   origin: process.env.CLIENT_URL || "http://localhost:3000",
   credentials: true,
 }));
 app.use(express.json());
 
-// --- 1. PUBLIC ROUTES ---
-// Đăng nhập, đăng ký, quên mật khẩu không cần token
+// --- 2. TỰ ĐỘNG DỌN DẸP THÙNG RÁC ---
+cron.schedule('0 0 * * *', async () => {
+  try {
+    console.log('--- 🕒 Bắt đầu tiến trình dọn dẹp thùng rác định kỳ ---');
+    await DeliveryModel.autoCleanExpired();
+    console.log('--- ✅ Đã dọn dẹp thành công dữ liệu quá hạn 30 ngày ---');
+  } catch (error) {
+    console.error('--- ❌ Lỗi khi tự động dọn dẹp thùng rác:', error.message);
+  }
+});
+
+// --- 3. PUBLIC ROUTES ---
 app.use("/api/auth", authRouter);
 
-// --- 2. KÍCH HOẠT BẢO VỆ (Authentication Layer) ---
-// Tất cả các route phía dưới dòng này bắt buộc phải có Bearer Token hợp lệ
+// --- 4. KÍCH HOẠT BẢO VỆ (Authentication Layer) ---
+// Note: Requests to routes below this line MUST have a valid JWT token
 app.use(protect); 
 
-// --- 3. PRIVATE ROUTES (Authorization Layer) ---
-
-/** * NHÓM 1: CHỈ ADMIN (Hệ thống & Nhân sự)
- * Quản lý người dùng, phân quyền phòng ban.
- */
+// --- 5. PRIVATE ROUTES ---
 app.use("/api/users", authorize("ADMIN"), userRouter);
 app.use('/api/departments', authorize("ADMIN"), departmentsRouter);
-
-/** * NHÓM 2: ADMIN & MANAGER (Quản lý kho bãi)
- * Manager có quyền nhập kho, quản lý master data nhưng không có quyền xóa user.
- */
 app.use('/api/receipts', authorize("ADMIN", "MANAGER"), receiptRoutes);
 app.use('/api/master', authorize("ADMIN", "MANAGER"), masterRoutes);
-
-/** * NHÓM 3: TẤT CẢ (ADMIN, MANAGER, USER)
- * User (ví dụ: Nhân viên giao nhận) có quyền xem và cập nhật trạng thái đơn giao hàng.
- */
 app.use('/api/deliveries', authorize("ADMIN", "MANAGER", "USER"), deliveryRoutes);
 
-// --- 4. XỬ LÝ LỖI TẬP TRUNG ---
+// --- 6. XỬ LÝ LỖI TẬP TRUNG ---
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
-  
-  // Log lỗi cho Developer (có thể dùng Winston hoặc Morgan)
   console.error(`[Error] ${err.message}`);
-
   res.status(statusCode).json({
     success: false,
     message: err.message || "Lỗi máy chủ nội bộ",
-    // Chỉ hiện stack trace khi ở môi trường phát triển
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 });
 
+// --- 7. KHỞI CHẠY SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
-  console.log(`🔐 Chế độ phân quyền: ADMIN > MANAGER > USER`);
 });
