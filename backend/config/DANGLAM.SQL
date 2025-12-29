@@ -241,3 +241,19 @@ BEGIN
     RAISE NOTICE 'Đã dọn dẹp thùng rác thành công vào lúc %', NOW();
 END;
 $$ LANGUAGE plpgsql;
+
+
+
+
+CREATE OR REPLACE FUNCTION clean_expired_trash()
+RETURNS void AS $$
+BEGIN
+    -- Xóa vĩnh viễn dữ liệu cũ hơn 30 ngày
+    DELETE FROM app_receipt_lot WHERE deleted_at < NOW() - INTERVAL '30 days';
+    DELETE FROM deliveries WHERE deleted_at < NOW() - INTERVAL '30 days';
+    DELETE FROM tasks WHERE deleted_at < NOW() - INTERVAL '30 days';
+    DELETE FROM users WHERE deleted_at < NOW() - INTERVAL '30 days';
+    
+    RAISE NOTICE 'Thùng rác đã được dọn dẹp tự động vào: %', NOW();
+END;
+$$ LANGUAGE plpgsql;

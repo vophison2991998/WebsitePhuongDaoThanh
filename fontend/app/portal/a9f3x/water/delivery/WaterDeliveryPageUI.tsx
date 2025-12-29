@@ -7,10 +7,9 @@ import {
     FaBuilding, FaUser, FaCheckCircle, FaClock, FaExclamationTriangle, FaSkull
 } from 'react-icons/fa';
 import { QRCodeSVG as QrCodeGenerator } from 'qrcode.react';
-import { useReactToPrint } from 'react-to-print'; // Thư viện in chuyên nghiệp
+import { useReactToPrint } from 'react-to-print';
 import { waterDeliveryApi } from './waterDeliveryApi';
 
-// --- Interfaces ---
 export interface DeliveryItem {
     id: string;
     recipient: string;
@@ -32,7 +31,6 @@ export interface TrashItem {
 }
 
 export default function WaterDeliveryPage() {
-    // --- 1. States & Refs ---
     const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
     const [trashDeliveries, setTrashDeliveries] = useState<TrashItem[]>([]);
     const [waterTypes, setWaterTypes] = useState<{id: any, name: string}[]>([]);
@@ -44,7 +42,6 @@ export default function WaterDeliveryPage() {
     const [selectedOrder, setSelectedOrder] = useState<DeliveryItem | null>(null);
     const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-    // Ref để trỏ tới vùng cần in
     const printRef = useRef<HTMLDivElement>(null);
 
     const [confirmDialog, setConfirmDialog] = useState({
@@ -64,13 +61,11 @@ export default function WaterDeliveryPage() {
         content: ''
     });
 
-    // --- 2. Print Logic (Sử dụng react-to-print) ---
     const handlePrint = useReactToPrint({
         contentRef: printRef,
         documentTitle: `Phieu_Xuat_Kho_${selectedOrder?.id || 'moi'}`,
     });
 
-    // --- 3. Helpers & Data Fetching ---
     const showNotify = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
         setMessage({ text, type });
         setTimeout(() => setMessage(null), 3000);
@@ -121,7 +116,6 @@ export default function WaterDeliveryPage() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    // --- 4. Actions ---
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
@@ -201,8 +195,6 @@ export default function WaterDeliveryPage() {
 
     return (
         <div className="p-4 md:p-8 bg-slate-50 min-h-screen text-slate-900 font-sans selection:bg-red-100">
-            
-            {/* CSS Print Styles */}
             <style jsx global>{`
                 @media print {
                     body { background: white !important; }
@@ -211,7 +203,6 @@ export default function WaterDeliveryPage() {
                 }
             `}</style>
 
-            {/* --- NOTIFICATION --- */}
             {message && (
                 <div className={`fixed top-5 right-5 z-[1000] p-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-right bg-white border ${message.type === 'error' ? 'border-red-100 text-red-600' : 'border-emerald-100 text-emerald-600'}`}>
                     {message.type === 'error' ? <FaExclamationTriangle className="animate-bounce" /> : <FaCheckCircle className="animate-pulse" />}
@@ -219,7 +210,6 @@ export default function WaterDeliveryPage() {
                 </div>
             )}
 
-            {/* --- CONFIRM DIALOG --- */}
             {confirmDialog.isOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in duration-200 border-4 border-double border-slate-200">
@@ -238,7 +228,6 @@ export default function WaterDeliveryPage() {
                 </div>
             )}
 
-            {/* --- HEADER --- */}
             <div className="max-w-[1640px] mx-auto flex flex-col md:flex-row justify-between items-center mb-10 gap-6 no-print">
                 <div>
                     <h1 className="text-4xl font-black text-slate-800 flex items-center gap-4 italic uppercase tracking-tighter">
@@ -263,7 +252,6 @@ export default function WaterDeliveryPage() {
             </div>
 
             <div className="max-w-[1640px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 no-print">
-                {/* --- FORM SECTION --- */}
                 <div className="lg:col-span-4">
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border-4 border-double border-slate-100 sticky top-8">
                         <h2 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-3 border-b-2 border-dotted pb-6 uppercase italic">
@@ -313,7 +301,6 @@ export default function WaterDeliveryPage() {
                     </div>
                 </div>
 
-                {/* --- LIST SECTION --- */}
                 <div className="lg:col-span-8">
                     <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border-4 border-double border-slate-100 overflow-hidden">
                         <div className="p-8 border-b-2 border-dotted flex flex-col md:flex-row justify-between items-center gap-4">
@@ -367,7 +354,6 @@ export default function WaterDeliveryPage() {
                 </div>
             </div>
 
-            {/* --- TRASH MODAL (Giữ nguyên) --- */}
             {isTrashOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[900] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full overflow-hidden animate-in zoom-in duration-300 border-4 border-double border-slate-200">
@@ -395,16 +381,13 @@ export default function WaterDeliveryPage() {
                 </div>
             )}
 
-            {/* --- QR PREVIEW & PRINT MODAL (Sử dụng react-to-print) --- */}
             {selectedOrder && (
                 <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[1000] flex items-center justify-center p-4">
                     <div className="bg-white p-10 rounded-[3rem] text-center max-w-sm w-full shadow-2xl relative animate-in zoom-in border-4 border-double border-slate-200">
-                        
                         <button onClick={() => setSelectedOrder(null)} className="no-print absolute top-8 right-8 text-slate-300 hover:text-slate-800 transition-colors">
                             <FaTimes size={24}/>
                         </button>
 
-                        {/* VÙNG SẼ ĐƯỢC IN (Gắn Ref vào đây) */}
                         <div ref={printRef} className="print:p-4 bg-white">
                             <h3 className="text-2xl font-black text-slate-800 italic uppercase mb-2">Phiếu xuất kho</h3>
                             <p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase mb-8">Xác thực E-Ticket</p>
@@ -420,13 +403,11 @@ export default function WaterDeliveryPage() {
                                 <div className="flex justify-between italic"><span className="text-slate-400 text-[10px] uppercase tracking-widest">Chi tiết</span><span>{selectedOrder.quantity} {selectedOrder.waterType}</span></div>
                             </div>
                             
-                            {/* Hiển thị ngày in chỉ khi in ra giấy */}
                             <p className="hidden print:block text-[8px] text-slate-400 mt-4 uppercase font-bold italic text-center">
                                 NGÀY IN: {new Date().toLocaleString('vi-VN')}
                             </p>
                         </div>
 
-                        {/* Nút trigger hàm handlePrint từ thư viện */}
                         <button onClick={() => handlePrint()} className="no-print w-full bg-slate-900 text-white py-5 rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-blue-600 transition-all uppercase tracking-widest shadow-xl border-2 border-slate-800">
                             <FaPrint /> In phiếu điện tử
                         </button>
